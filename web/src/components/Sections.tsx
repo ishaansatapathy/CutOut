@@ -361,3 +361,185 @@ export function Video() {
   };
   const release = () => {
     stack.current!.classList.remove("scrub");
+    stack.current!.style.removeProperty("--ph");
+    counter.current!.textContent = "Hover to scrub";
+  };
+  const strip = (tinted: boolean) => (
+    <div className={`tl-frames ${tinted ? "tinted" : ""}`} aria-hidden>
+      {frames.map((_, i) => (
+        <span key={i} className={`tf ${i === 8 ? "lost" : ""}`} style={cssVar("--i", i)}>
+          <span className="tf-in">
+            <img src="/demo/before.webp" alt="" loading="lazy" />
+            {tinted && <i />}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+
+  return (
+    <section className="sec yellow panel" id="video">
+      <div className="wrap">
+        <div className="video-head">
+          <Reveal>
+            <span className="eyebrow k">Video · beta</span>
+            <h2>One click. <em>Every frame.</em></h2>
+          </Reveal>
+          <Reveal delay={100}>
+            <p className="sub">
+              Click your subject on any frame and CutOut tracks it through the clip. If it loses the subject somewhere,
+              scrub to that frame, add one correction click, and it re-runs from there instead of starting over.
+            </p>
+          </Reveal>
+        </div>
+        <Reveal delay={150}>
+          <div className="tl">
+            <div className="tl-top">
+              <span className="tl-file">market_walk.mp4</span>
+              <span className="tl-time" ref={counter}>Hover to scrub</span>
+            </div>
+            <div
+              className="tl-stack"
+              ref={stack}
+              onPointerMove={scrub}
+              onPointerDown={scrub}
+              onPointerLeave={release}
+              onPointerCancel={release}
+            >
+              {strip(false)}
+              {strip(true)}
+              <span className="tl-head" />
+              <span className="tl-fix" style={cssVar("--i", 8)}>1 correction click</span>
+            </div>
+          </div>
+        </Reveal>
+        <div className="specs">
+          {[
+            ["30s", "max clip length while in beta"],
+            ["1080p", "max resolution, 30 fps"],
+            ["WebM", "with real transparency"],
+            ["MP4", "over a solid colour"],
+          ].map(([b, s], i) => (
+            <Reveal key={b} delay={i * 70}>
+              <div className="spec spotlight" onPointerMove={spot}><b>{b}</b><span>{s}</span></div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------ for who ------------------------------ */
+const SNIPPETS: Record<string, string> = {
+  curl: `curl -X POST http://localhost:3001/api/v1/images/remove-background \\
+  -H "Authorization: Bearer $CUTOUT_KEY" \\
+  -F image=@product.jpg \\
+  -F 'prompt={"points":[{"x":420,"y":310,"label":1}]}' \\
+  -o cutout.png`,
+  python: `import json, requests
+
+r = requests.post(
+    "http://localhost:3001/api/v1/videos/remove-background",
+    headers={"Authorization": f"Bearer {KEY}"},
+    files={"video": open("clip.mp4", "rb")},
+    data={"prompt": json.dumps({"time": 0.5, "norm": True,
+        "points": [{"x": 0.57, "y": 0.6, "label": 1}]}),
+        "seconds": 10, "res": 720},
+)
+job_id = r.json()["id"]  # poll GET /api/v1/jobs/{id}`,
+  node: `const form = new FormData();
+form.append("image", file);
+form.append("prompt", JSON.stringify({ box: [380, 200, 640, 700] }));
+
+const res = await fetch("http://localhost:3001/api/v1/images/remove-background", {
+  method: "POST",
+  headers: { Authorization: \`Bearer \${KEY}\` },
+  body: form,
+});
+const png = await res.blob();`,
+};
+
+function Code() {
+  const [tab, setTab] = useState("curl");
+  return (
+    <div className="code">
+      <div className="code-tabs" role="tablist">
+        {Object.keys(SNIPPETS).map((k) => (
+          <button key={k} role="tab" aria-selected={tab === k} id={`api-tab-${k}`} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{k}</button>
+        ))}
+      </div>
+      <pre key={tab}>{SNIPPETS[tab]}</pre>
+    </div>
+  );
+}
+
+const AUDIENCES = [
+  {
+    id: "sellers",
+    label: "Sellers",
+    h: "Listing photos on clean white.",
+    d: "Shoot on your table, click the product, export on white. Same look across every listing without a studio.",
+    points: ["Flatten onto white or any colour", "Full-resolution PNG", "Batch upload is on the roadmap"],
+  },
+  {
+    id: "creators",
+    label: "Creators",
+    h: "Thumbnails and reels, faster.",
+    d: "Pull yourself out of any shot for thumbnails, stickers or intros. For video, select once and export WebM with transparency.",
+    points: ["Cutouts for thumbnails and stickers", "Video tracking with correction clicks", "WebM with alpha for editors"],
+  },
+  {
+    id: "developers",
+    label: "Developers",
+    h: "One REST call. Prepaid, no ads.",
+    d: "Send an image or video with a click point or box. Images return a PNG; video returns a job id you poll.",
+    points: ["50 free images every month", "Then billed per image or per second", "Results deleted after 24 hours"],
+  },
+];
+
+export function ForWho() {
+  const [tab, setTab] = useState("sellers");
+
+  useEffect(() => {
+    const on = () => window.location.hash === "#developers" && setTab("developers");
+    on();
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+
+  const a = AUDIENCES.find((x) => x.id === tab)!;
+
+  return (
+    <section className="sec white" id="for">
+      <span id="developers" className="anchor" />
+      <div className="wrap">
+        <Reveal className="sec-head center">
+          <Eyebrow>Who it&apos;s for</Eyebrow>
+          <h2>Made for people who <em>ship daily.</em></h2>
+        </Reveal>
+        <div className="tabs" role="tablist" aria-label="Audience">
+          {AUDIENCES.map((x) => (
+            <button key={x.id} role="tab" aria-selected={tab === x.id} id={`for-${x.id}`} className={tab === x.id ? "on" : ""} onClick={() => setTab(x.id)}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+        <div className="for-panel" key={tab}>
+          <div className="for-copy">
+            <h3>{a.h}</h3>
+            <p>{a.d}</p>
+            <ul className="ticks">{a.points.map((p) => <li key={p}>{p}</li>)}</ul>
+            {tab === "developers" ? (
+              <>
+                <ul className="endpoints">
+                  <li><code>POST</code>/api/v1/images/remove-background</li>
+                  <li><code>POST</code>/api/v1/videos/remove-background</li>
+                  <li><code>GET</code>/api/v1/jobs/{"{id}"}</li>
+                  <li><code>GET</code>/api/v1/usage</li>
+                </ul>
+                <Link href="/account" className="btn btn-k">Get an API key <span className="arrow">→</span></Link>
+              </>
+            ) : (
+              <Link href="/app" className="btn btn-k">Try it on your photo <span className="arrow">→</span></Link>
+            )}

@@ -74,7 +74,8 @@ function sqliteBackend(): Backend {
   const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
   mkdirSync(dirname(config.dbPath), { recursive: true });
   const sdb = new DatabaseSync(config.dbPath);
-  sdb.exec("PRAGMA journal_mode = WAL");
+  try { sdb.exec("PRAGMA busy_timeout = 10000;"); } catch {}
+  try { sdb.exec("PRAGMA journal_mode = WAL;"); } catch {}
   const toQ = (sql: string, params: unknown[]) => {
     const args: unknown[] = [];
     const out = sql.replace(/\$(\d+)/g, (_, n: string) => {
@@ -111,7 +112,13 @@ function sqliteBackend(): Backend {
       }
     },
     init: async () => {
-      for (const stmt of SCHEMA) sdb.exec(stmt);
+      for (const stmt of SCHEMA) {
+        try {
+          sdb.exec(stmt);
+        } catch {
+          // Ignore if table/index exists or was created concurrently
+        }
+      }
     },
   };
 }

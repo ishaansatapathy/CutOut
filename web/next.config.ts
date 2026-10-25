@@ -1,4 +1,9 @@
+import path from "node:path";
+import { loadEnvConfig } from "@next/env";
 import type { NextConfig } from "next";
+
+// Load single unified .env from root
+loadEnvConfig(path.resolve(__dirname, ".."));
 
 const AI_URL = process.env.AI_URL ?? "http://127.0.0.1:8100";
 

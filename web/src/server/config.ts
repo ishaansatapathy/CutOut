@@ -1,3 +1,9 @@
+import path from "node:path";
+import { loadEnvConfig } from "@next/env";
+
+loadEnvConfig(path.resolve(process.cwd(), ".."));
+loadEnvConfig(process.cwd());
+
 const env = (k: string, d = "") => process.env[k] ?? d;
 
 export const config = {

@@ -30,7 +30,7 @@ const passthrough = async (r: Response) =>
   new Response(r.body, { status: r.status, headers: { "Content-Type": r.headers.get("Content-Type") ?? "application/octet-stream" } });
 
 async function ownsJob(userId: string, extId: string) {
-  return !!(await db.get(`SELECT 1 x FROM jobs WHERE user_id = $1 AND ext_id = $2`, [userId, extId]));
+  return !!(await db.get(`SELECT 1 x FROM jobs WHERE user_id = $1 AND (ext_id = $2 OR id = $2)`, [userId, extId]));
 }
 
 async function handle(req: Request, path: string[]) {
@@ -68,8 +68,19 @@ async function handle(req: Request, path: string[]) {
     const form = await req.formData();
     const seconds = Math.min(RULES.video.maxSeconds, Math.max(1, Number(form.get("seconds") ?? 10)));
     const res = Number(form.get("res") ?? 720) === 1080 ? 1080 : 720;
+    const webhookUrl = (form.get("webhook_url") as string | null) || (form.get("webhook") as string | null);
     form.delete("seconds");
     form.delete("res");
+    if (webhookUrl) {
+      form.delete("webhook_url");
+      form.delete("webhook");
+      let promptObj: Record<string, unknown> = {};
+      try {
+        promptObj = JSON.parse((form.get("prompt") as string) || "{}");
+      } catch {}
+      promptObj.webhook_url = webhookUrl;
+      form.set("prompt", JSON.stringify(promptObj));
+    }
     const bill = await payForApi("video", ctx, { seconds, res });
     if (bill.kind !== "token") return err(402, bill.message);
     const r = await forward("/v1/videos", bill.token, { method: "POST", body: form });

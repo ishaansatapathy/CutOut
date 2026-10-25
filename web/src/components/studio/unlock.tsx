@@ -1,10 +1,61 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { creditCost, type Tool } from "@/lib/rules";
 import { api } from "@/trpc/client";
 import { useAccountUi, useMe } from "./account";
 import { Modal } from "./Modal";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: string | HTMLElement, opts: Record<string, unknown>) => string;
+      remove: (id: string) => void;
+    };
+  }
+}
+
+let turnstileLoad: Promise<void> | null = null;
+function loadTurnstile() {
+  turnstileLoad ??= new Promise((res, rej) => {
+    if (window.turnstile) return res();
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    s.async = true;
+    s.defer = true;
+    s.onload = () => res();
+    s.onerror = () => rej(new Error("Couldn't load the verification widget."));
+    document.head.appendChild(s);
+  });
+  return turnstileLoad;
+}
+
+/** Cloudflare Turnstile ("prove you're not a bot") for the free tier. Renders nothing when no site key is set. */
+function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (token: string | null) => void }) {
+  const elId = useId().replace(/:/g, "");
+  const widgetId = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTurnstile().then(() => {
+      if (cancelled || !window.turnstile) return;
+      widgetId.current = window.turnstile.render(`#${elId}`, {
+        sitekey: siteKey,
+        theme: "light",
+        callback: (token: string) => onToken(token),
+        "expired-callback": () => onToken(null),
+        "error-callback": () => onToken(null),
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (widgetId.current) window.turnstile?.remove(widgetId.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteKey, elId]);
+
+  return <div id={elId} className="turnstile-box" />;
+}
 
 export type VideoOpts = { seconds: number; res: 480 | 720 | 1080 };
 export type Grant = { token: string; jti: string; limits: { sec?: number; res?: number }; charged: number };
@@ -53,18 +104,22 @@ function UnlockModal({ req, onDone }: { req: Req; onDone: (g: Grant | null) => v
   const request = api.jobs.request.useMutation();
   const [ads, setAds] = useState<{ adSession: string; required: number } | null>(null);
   const [blocked, setBlocked] = useState<{ reason: string; message: string } | null>(null);
+  const [tsToken, setTsToken] = useState<string | null>(null);
 
   if (!me.data) return null;
-  const { user, usage, rules } = me.data;
+  const { user, usage, rules, turnstileSiteKey } = me.data;
   const cost = creditCost(req.tool, req.video);
   const enough = !!user && usage.credits >= cost;
   const freeAllowed = req.tool !== "generate" && !(req.tool === "video" && req.video && req.video.res > rules.video.freeRes);
   const adCount = req.tool === "video" ? rules.video.adsPerJob : rules.image.adsPerJob;
+  // Signed-in users already cost more to script (a real Google account) and are capped
+  // per-day regardless, so only anonymous requests need the human check.
+  const needsTurnstile = !user && !!turnstileSiteKey;
 
   const go = async (pay: "ads" | "credits") => {
     setBlocked(null);
     try {
-      const r = await request.mutateAsync({ tool: req.tool, pay, video: req.video });
+      const r = await request.mutateAsync({ tool: req.tool, pay, video: req.video, turnstileToken: tsToken ?? undefined });
       if (r.kind === "blocked") return setBlocked(r);
       if (r.kind === "ads") return setAds(r);
       await utils.me.invalidate();
@@ -90,15 +145,23 @@ function UnlockModal({ req, onDone }: { req: Req; onDone: (g: Grant | null) => v
     <Modal open title={req.label} onClose={() => onDone(null)}>
       <div className="pay-options">
         {freeAllowed && (
-          <button className="pay-opt" onClick={() => go("ads")} disabled={request.isPending} id="pay-ads">
-            <span className="pay-k">Free</span>
-            <b>Watch {adCount} short ads</b>
-            <small>
-              {req.tool === "video"
-                ? `Up to ${rules.video.freeSeconds}s at ${rules.video.freeRes}p · 1 a day · needs sign-in`
-                : user ? `${usage.imageLeft} free left today` : `${usage.imageLeft} free left on this device`}
-            </small>
-          </button>
+          <div className="pay-opt-wrap">
+            <button
+              className="pay-opt"
+              onClick={() => go("ads")}
+              disabled={request.isPending || (needsTurnstile && !tsToken)}
+              id="pay-ads"
+            >
+              <span className="pay-k">Free</span>
+              <b>Watch {adCount} short ads</b>
+              <small>
+                {req.tool === "video"
+                  ? `Up to ${rules.video.freeSeconds}s at ${rules.video.freeRes}p · 1 a day · needs sign-in`
+                  : user ? `${usage.imageLeft} free left today` : `${usage.imageLeft} free left on this device`}
+              </small>
+            </button>
+            {needsTurnstile && <Turnstile siteKey={turnstileSiteKey} onToken={setTsToken} />}
+          </div>
         )}
         <button className={`pay-opt ${enough ? "best" : ""}`} onClick={() => (user ? (enough ? go("credits") : ui.buy(`You need ${cost} credits for this.`)) : ui.signIn("Sign in to use credits."))} disabled={request.isPending} id="pay-credits">
           <span className="pay-k">No ads</span>

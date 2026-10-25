@@ -1,6 +1,7 @@
 import { creditCost, IMAGE_TOOLS, isImageTool, RULES, type Tool } from "@/lib/rules";
 import { id, mintJobToken, type JobLimits } from "./crypto";
 import { db, type Exec, now, startOfDay, startOfMonth, tx } from "./db";
+import { verifyTurnstile } from "./turnstile";
 
 export type Ctx = { deviceId: string; ip: string; userId: string | null };
 export type VideoOpts = { seconds: number; res: 480 | 720 | 1080 };
@@ -142,7 +143,12 @@ export function payWithCredits(tool: Tool, ctx: Ctx, video?: VideoOpts, source =
 }
 
 /** Start the free path: returns an ad session the client must complete. */
-export async function startAds(tool: Tool, ctx: Ctx, video?: VideoOpts) {
+export async function startAds(tool: Tool, ctx: Ctx, video?: VideoOpts, turnstileToken?: string) {
+  // Only anonymous requests need the human check — signed-in users already cost more to
+  // script (a real Google account) and are capped per-day regardless.
+  if (!ctx.userId && !(await verifyTurnstile(turnstileToken, ctx.ip))) {
+    return { kind: "blocked", reason: "invalid", message: "Please complete the verification and try again." } as Blocked;
+  }
   const blocked = await freeEligibility(tool, ctx, video);
   if (blocked) return blocked;
   const required = tool === "video" ? RULES.video.adsPerJob : RULES.image.adsPerJob;

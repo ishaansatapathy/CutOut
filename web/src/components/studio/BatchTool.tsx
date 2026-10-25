@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { createZip } from "@/lib/zip";
-import { download, errorText } from "./SelectStage";
+import { download, errorText, loadImage } from "./SelectStage";
 import { useRefund, useUnlock } from "./unlock";
 
 type BatchItem = {
@@ -73,15 +73,15 @@ export function BatchTool() {
       }
 
       try {
+        // Box the central ~70% of the actual image so the subject is selected
+        // regardless of the photo's real resolution (phone photos are rarely 1000x1000).
+        const img = await loadImage(it.origUrl);
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const box = [w * 0.15, h * 0.15, w * 0.85, h * 0.85];
+
         const fd = new FormData();
         fd.append("image", it.file);
-        // Default smart subject prompt for e-commerce items: center focus point
-        fd.append(
-          "prompt",
-          JSON.stringify({
-            points: [{ x: 500, y: 500, label: 1 }],
-          })
-        );
+        fd.append("prompt", JSON.stringify({ box }));
         if (bg) {
           fd.append("background", bg);
         }
@@ -129,8 +129,7 @@ export function BatchTool() {
     for (let i = 0; i < finished.length; i++) {
       const it = finished[i];
       const baseName = it.file.name.replace(/\.[^/.]+$/, "");
-      const ext = bg ? "png" : "png";
-      const name = `${baseName}-cutout.${ext}`;
+      const name = `${baseName}-cutout.png`;
       const buf = await it.blob!.arrayBuffer();
       filesToZip.push({ name, data: new Uint8Array(buf) });
     }

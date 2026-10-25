@@ -33,17 +33,21 @@ export const appRouter = router({
     devLogin: devLoginAllowed(),
     devPayments: devPaymentsAllowed(),
     adProvider: config.adProvider,
+    turnstileSiteKey: config.turnstile.siteKey || null,
     rules: RULES,
   })),
 
   jobs: router({
     /** Ask for a job token. pay=credits charges now; pay=ads opens an ad session. */
     request: publicProcedure
-      .input(z.object({ tool: toolSchema, pay: z.enum(["ads", "credits"]), video: videoSchema.optional() }))
+      .input(z.object({
+        tool: toolSchema, pay: z.enum(["ads", "credits"]), video: videoSchema.optional(),
+        turnstileToken: z.string().max(4000).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         if (input.tool === "video" && !input.video) throw new TRPCError({ code: "BAD_REQUEST", message: "Video details missing." });
         if (input.pay === "credits" || input.tool === "generate") return payWithCredits(input.tool, ctx, input.video);
-        return startAds(input.tool, ctx, input.video);
+        return startAds(input.tool, ctx, input.video, input.turnstileToken);
       }),
     /** Return credits for a job that failed. Idempotent. */
     refund: publicProcedure.input(z.object({ jti: z.string() })).mutation(({ ctx, input }) => refundJob(input.jti, ctx)),

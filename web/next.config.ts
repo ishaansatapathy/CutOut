@@ -10,6 +10,8 @@ const AI_URL = process.env.AI_URL ?? "http://127.0.0.1:8100";
 const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   serverExternalPackages: ["pg"],
+  // Standalone output for the Docker image: a minimal server bundle instead of full node_modules.
+  output: "standalone",
   // Binary uploads (images/video) go straight to the Python GPU service.
   async rewrites() {
     return [{ source: "/ai/:path*", destination: `${AI_URL}/:path*` }];

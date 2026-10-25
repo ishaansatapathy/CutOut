@@ -14,6 +14,7 @@ export const config = {
   google: { id: env("GOOGLE_CLIENT_ID"), secret: env("GOOGLE_CLIENT_SECRET") },
   razorpay: { id: env("RAZORPAY_KEY_ID"), secret: env("RAZORPAY_KEY_SECRET"), webhook: env("RAZORPAY_WEBHOOK_SECRET") },
   adProvider: env("NEXT_PUBLIC_AD_PROVIDER", "test"),
+  turnstile: { secret: env("TURNSTILE_SECRET_KEY"), siteKey: env("NEXT_PUBLIC_TURNSTILE_SITE_KEY") },
   dev: process.env.NODE_ENV !== "production",
   dbPath: env("DB_PATH", "data/cutout.db"),
   databaseUrl: env("DATABASE_URL"),

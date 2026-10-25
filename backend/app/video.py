@@ -1,7 +1,11 @@
 """Video jobs: decode -> SAM 2 tracking in chunks -> edge refine + temporal smoothing -> encode."""
+import ipaddress
 import json
 import os
 import queue
+import socket
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 import shutil
 import subprocess
@@ -9,6 +13,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
@@ -82,6 +87,9 @@ def create(src: Path, prompt: dict, limits: dict, owner: str) -> dict:
     """Validate and normalise the upload, then queue tracking. Limits come from the job token."""
     if not available():
         raise VideoError("Video needs SAM 2, which isn't installed on this server.")
+    webhook_url = prompt.get("webhook_url")
+    if webhook_url and not _is_safe_webhook_host(webhook_url):
+        raise VideoError(_UNSAFE_WEBHOOK_MSG)
     info = probe(src)
     max_sec = float(limits.get("sec", 5))
     max_h = int(limits.get("res", 480))
@@ -337,17 +345,58 @@ def file_path(jid: str, name: str) -> Path:
     return JOBS_DIR / jid / name
 
 
+_UNSAFE_WEBHOOK_MSG = "webhook_url must be a public http(s) address, not an internal, loopback or link-local one."
+
+
+def _is_safe_webhook_host(url: str) -> bool:
+    """Blocks the common SSRF targets: internal services, loopback, link-local (incl. cloud metadata)."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            return False
+    return True
+
+
+class _NoRedirect(urllib.request.HTTPErrorProcessor):
+    """Don't auto-follow redirects: a 3xx could point at an internal address we'd otherwise fetch blindly."""
+    def http_response(self, request, response):  # noqa: ARG002 - must match base signature
+        return response
+
+    https_response = http_response
+
+
+_webhook_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def _notify_webhook(url: str, payload: dict):
     def _send():
+        # Re-validate right before delivery: the job may have run for minutes since
+        # creation, and DNS for the target host could have changed in that window.
+        if not _is_safe_webhook_host(url):
+            print(f"Webhook to {url} skipped: resolves to a disallowed address.")
+            return
         try:
-            import urllib.request
             data = json.dumps(payload).encode()
             req = urllib.request.Request(
                 url, data=data,
                 headers={"Content-Type": "application/json", "User-Agent": "CutOut-Webhook/1.0"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=15):
+            with _webhook_opener.open(req, timeout=15):
                 pass
         except Exception as e:
             print(f"Webhook notification to {url} failed: {e}")

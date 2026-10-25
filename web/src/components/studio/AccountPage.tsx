@@ -96,6 +96,8 @@ function Inner() {
               <pre>{`POST /api/v1/images/remove-background   image, prompt={"points":[{"x":420,"y":310,"label":1}]}
 POST /api/v1/images/generate            {"prompt": "...", "size": "square"}
 POST /api/v1/videos/remove-background   video, prompt, seconds, res=720|1080
+                                         optional: webhook_url — we POST the
+                                         finished job here instead of you polling
 GET  /api/v1/jobs/{id}                  status and progress
 GET  /api/v1/jobs/{id}/result?format=webm|mp4&color=%23ffffff
 GET  /api/v1/usage`}</pre>

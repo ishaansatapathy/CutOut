@@ -1,0 +1,47 @@
+# One shared .env at the repo root is the single source of truth for both services —
+# the same file `backend/app/config.py` and `web/src/server/config.ts` already read locally.
+#
+#   docker compose up --build -d
+#
+# The GPU service is deliberately NOT published to the host (no top-level `ports:` below):
+# only the `web` container can reach it, at http://backend:8100, over the private compose
+# network. Put a reverse proxy (Caddy/Nginx/your platform's own) in front of `web` for TLS;
+# this compose file does not set one up.
+services:
+  backend:
+    build: ./backend
+    env_file: ./.env
+    environment:
+      # Inside the compose network the GPU service is just "backend", not localhost.
+      DATA_DIR: /data
+    volumes:
+      - backend_data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/api/info', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  web:
+    build: ./web
+    env_file: ./.env
+    environment:
+      AI_URL: http://backend:8100
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend_data:

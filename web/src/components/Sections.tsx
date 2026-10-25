@@ -27,6 +27,7 @@ export function Marquee() {
 type ToolCard = { id: string; href: string; title: string; text: string; tag: string; tagKind: "ads" | "free" | "credits" | "beta"; cls: string };
 const TOOL_CARDS: ToolCard[] = [
   { id: "bg", href: "/app?tool=remove", title: "Remove background", text: "Click the subject. Get a clean cutout with soft hair edges, at full resolution.", tag: "Free with ads", tagKind: "ads", cls: "t-bg" },
+  { id: "batch", href: "/app?tool=batch", title: "Batch removal", text: "Drop up to 20 product photos at once. Same background on every one, zipped for download.", tag: "Free with ads", tagKind: "ads", cls: "t-batch" },
   { id: "erase", href: "/app?tool=erase", title: "Erase objects", text: "Click a photobomber, a bin or a wire and it's gone, filled in to match.", tag: "Free with ads", tagKind: "ads", cls: "t-erase" },
   { id: "sticker", href: "/app?tool=remove", title: "Stickers", text: "Die-cut border and shadow, sized for WhatsApp and Instagram.", tag: "Included with any cutout", tagKind: "free", cls: "t-sticker" },
   { id: "profile", href: "/app?tool=remove", title: "Profile pictures", text: "Head and shoulders, centred on a colour. Circle or square.", tag: "Included with any cutout", tagKind: "free", cls: "t-profile" },
@@ -53,6 +54,17 @@ function ToolVisual({ cls }: { cls: string }) {
           <img src="/demo/before.webp" alt="" loading="lazy" />
           <i className="tv-mask" />
           <img className="tv-after" src="/demo/erased.webp" alt="" loading="lazy" />
+        </div>
+      );
+    case "t-batch":
+      return (
+        <div className="tv tv-batch">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <span key={i} className="checker" style={cssVar("--i", i)}>
+              <img src="/demo/cutout.webp" alt="" loading="lazy" />
+            </span>
+          ))}
+          <span className="tv-batch-badge">20 photos · 1 click</span>
         </div>
       );
     case "t-sticker":
@@ -484,9 +496,11 @@ r = requests.post(
     files={"video": open("clip.mp4", "rb")},
     data={"prompt": json.dumps({"time": 0.5, "norm": True,
         "points": [{"x": 0.57, "y": 0.6, "label": 1}]}),
-        "seconds": 10, "res": 720},
+        "seconds": 10, "res": 720,
+        # optional: skip polling, we POST the finished job here instead
+        "webhook_url": "https://yourapp.com/hooks/cutout"},
 )
-job_id = r.json()["id"]  # poll GET /api/v1/jobs/{id}`,
+job_id = r.json()["id"]  # or poll GET /api/v1/jobs/{id}`,
   node: `const form = new FormData();
 form.append("image", file);
 form.append("prompt", JSON.stringify({ box: [380, 200, 640, 700] }));
@@ -519,7 +533,7 @@ const AUDIENCES = [
     label: "Sellers",
     h: "Listing photos on clean white.",
     d: "Shoot on your table, click the product, export on white. Same look across every listing without a studio.",
-    points: ["Flatten onto white or any colour", "Full-resolution PNG", "Batch upload is on the roadmap"],
+    points: ["Flatten onto white or any colour", "Full-resolution PNG", "Batch mode: up to 20 photos, zipped"],
   },
   {
     id: "creators",

@@ -147,3 +147,152 @@ def segment(sid: str, body: dict):
         raise HTTPException(429, "Too many edits on this image. Upload it again to keep going.")
     m = _mask(s, body)
     if s["tool"] == "erase":
+        s["mask"] = m
+        full = cv2.resize(m, (s["rgb"].shape[1], s["rgb"].shape[0]), interpolation=cv2.INTER_NEAREST)
+        return Response(_png(np.dstack([full, full, full, full]), "RGBA"), media_type="image/png")
+    s["alpha"] = models.refine_with_matting(s["small"], m, guided_alpha)
+    return Response(_png(compose_rgba(s["rgb"], s["alpha"]), "RGBA"), media_type="image/png")
+
+
+@app.post("/v1/images/session/{sid}/export")
+def export(sid: str, body: dict):
+    s = _session(sid, "remove")
+    if s["alpha"] is None:
+        raise HTTPException(400, "Select a subject first")
+    rgba = _flatten(compose_rgba(s["rgb"], s["alpha"]), body.get("background"))
+    return Response(_png(rgba, "RGBA"), media_type="image/png",
+                    headers={"Content-Disposition": 'attachment; filename="cutout.png"'})
+
+
+@app.post("/v1/images/session/{sid}/erase")
+def erase(sid: str, body: dict):
+    """Inpaint the selected object; the result becomes the new base so you can erase again."""
+    s = _session(sid, "erase")
+    if s.get("erases", 0) >= MAX_ERASES:
+        raise HTTPException(429, f"This image has used its {MAX_ERASES} erases. Upload it again to keep going.")
+    s["erases"] = s.get("erases", 0) + 1
+    m = _mask(s, body) if (body.get("points") or body.get("box")) else s.get("mask")
+    if m is None:
+        raise HTTPException(400, "Select what to erase first")
+    sal = s.get("cache", {}).get("saliency")
+    if sal is not None:
+        near = cv2.dilate(m, np.ones((31, 31), np.uint8))
+        m = np.where((near > 0) & (sal > 20), 255, m).astype(np.uint8)
+    full = cv2.resize(m, (s["rgb"].shape[1], s["rgb"].shape[0]), interpolation=cv2.INTER_NEAREST)
+    s["rgb"] = models.inpaint(s["rgb"], full)
+    s["small"], s["scale"] = _work_copy(s["rgb"])
+    s["mask"] = None
+    s["cache"] = {}
+    engine.set_image(s["key"], s["small"])
+    buf = io.BytesIO()
+    Image.fromarray(s["rgb"]).save(buf, "PNG")
+    return Response(buf.getvalue(), media_type="image/png")
+
+
+@app.post("/v1/images/session/{sid}/upscale")
+def upscale(sid: str):
+    s = _session(sid, "upscale")
+    h, w = s["rgb"].shape[:2]
+    if max(h, w) > 2048:
+        raise HTTPException(400, "Upscale works on images up to 2048 px; this one is already large.")
+    out, method = models.upscale2x(s["rgb"])
+    return Response(_png(out, "RGB"), media_type="image/png", headers={"X-Upscale-Method": method})
+
+
+@app.post("/v1/images/remove-background", dependencies=[Depends(require("remove"))])
+async def remove_background(image: UploadFile = File(...), prompt: str = Form(...),
+                            background: str | None = Form(None)):
+    """One-shot API: image + prompt JSON ({points, box}) -> PNG."""
+    try:
+        p = json.loads(prompt)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "prompt must be JSON")
+    rgb = _decode(await image.read())
+    small, scale = _work_copy(rgb)
+    key = uuid.uuid4().hex
+    engine.set_image(key, small)
+    s = {"small": small, "scale": scale, "key": key}
+    alpha = models.refine_with_matting(small, _mask(s, p), guided_alpha)
+    return Response(_png(_flatten(compose_rgba(rgb, alpha), background), "RGBA"), media_type="image/png")
+
+
+# ------------------------------------------------------------------ generation
+@app.post("/v1/images/generate", dependencies=[Depends(require("generate"))])
+def generate(body: dict):
+    prompt = str(body.get("prompt", "")).strip()[:300]
+    if len(prompt) < 3:
+        raise HTTPException(400, "Write a longer prompt")
+    try:
+        img = models.generate(prompt, body.get("size", "square"), body.get("seed"))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    meta = {"ai_generated": "true", "prompt": prompt}
+    return Response(_png(np.array(img), "RGB", meta), media_type="image/png",
+                    headers={"X-AI-Generated": "true"})
+
+
+# ------------------------------------------------------------------ video
+@app.post("/v1/videos")
+async def create_video(video_file: UploadFile = File(..., alias="video"), prompt: str = Form(...),
+                       claims: dict = Depends(require("video"))):
+    _gc()
+    try:
+        p = json.loads(prompt)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "prompt must be JSON")
+    suffix = Path(video_file.filename or "").suffix.lower()
+    if suffix not in {".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi"}:
+        suffix = ".mp4"
+    fd, name = tempfile.mkstemp(suffix=suffix)
+    tmp = Path(name)
+    size, too_big = 0, False
+    with os.fdopen(fd, "wb") as f:
+        while chunk := await video_file.read(1 << 20):
+            size += len(chunk)
+            if size > MAX_VIDEO_BYTES:
+                too_big = True
+                break
+            f.write(chunk)
+    if too_big:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(413, "Video larger than 100 MB")
+    try:
+        return video.create(tmp, p, claims.get("lim", {}), claims.get("sub", ""))
+    except video.VideoError as e:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(400, str(e))
+
+
+@app.post("/v1/videos/{jid}/correct")
+def correct_video(jid: str, body: dict):
+    try:
+        return video.correct(jid, body)
+    except video.VideoError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/v1/jobs/{jid}")
+def job_status(jid: str):
+    j = video.jobs.get(jid)
+    if not j:
+        raise HTTPException(404, "Job not found or expired")
+    return video.public(j)
+
+
+@app.get("/v1/jobs/{jid}/frame/{i}")
+def job_frame(jid: str, i: int):
+    try:
+        return Response(video.preview_frame(jid, i), media_type="image/jpeg")
+    except video.VideoError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/v1/jobs/{jid}/result")
+def job_result(jid: str, format: str = "webm", color: str = "#ffffff"):
+    try:
+        path = video.render_mp4(jid, color) if format == "mp4" else video.file_path(jid, "cutout.webm")
+    except video.VideoError as e:
+        raise HTTPException(400, str(e))
+    return FileResponse(path, filename=f"cutout.{format}", media_type="video/mp4" if format == "mp4" else "video/webm")

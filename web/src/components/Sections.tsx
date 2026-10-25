@@ -543,3 +543,184 @@ export function ForWho() {
             ) : (
               <Link href="/app" className="btn btn-k">Try it on your photo <span className="arrow">→</span></Link>
             )}
+          </div>
+          <div className="for-visual">
+            {tab === "sellers" && (
+              <div className="mock-listing">
+                <div className="ml-img"><img src="/demo/cutout.webp" alt="Cutout on a white listing background" loading="lazy" /></div>
+                <div className="ml-lines"><i /><i /><i className="short" /></div>
+                <span className="ml-badge">On white · 2048 × 2048</span>
+              </div>
+            )}
+            {tab === "creators" && (
+              <div className="mock-thumb">
+                <b>Street food,<br />ranked.</b>
+                <img src="/demo/cutout.webp" alt="Cutout used in a video thumbnail" loading="lazy" />
+                <span className="mt-time">12:04</span>
+              </div>
+            )}
+            {tab === "developers" && <Code />}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------ pricing ------------------------------ */
+export function Pricing() {
+  return (
+    <section className="sec" id="pricing">
+      <div className="wrap">
+        <Reveal className="sec-head center">
+          <Eyebrow>Pricing</Eyebrow>
+          <h2>Pay per cutout. <em>Not per month.</em></h2>
+          <p>Free jobs unlock after short ads. Credit packs are paid once with any UPI app, paid jobs never show ads, and image generation is credits-only.</p>
+        </Reveal>
+        <div className="plans">
+          {PLANS.map((p, i) => {
+            const popular = "popular" in p && p.popular;
+            return (
+              <Reveal key={p.id} delay={i * 70} className={`plan ${popular ? "popular" : ""}`}>
+                <div id={`plan-${p.id}`} className="plan-in spotlight" onPointerMove={spot}>
+                  {popular && <span className="pill">Most picked</span>}
+                  <h3>{p.name}</h3>
+                  <p className="tagline">{p.tagline}</p>
+                  <div className="price">₹{p.price}<small>{p.credits ? ` / ${p.credits} credits` : " / always"}</small></div>
+                  <ul>{p.features.map((f) => <li key={f}>{f}</li>)}</ul>
+                  <Link href="/app" className={`btn ${popular ? "btn-y" : p.id === "free" ? "btn-line" : "btn-k"}`}>{p.cta}</Link>
+                </div>
+              </Reveal>
+            );
+          })}
+        </div>
+        <Reveal className="credit-row">
+          <div><b>1 credit</b><span>per image or generation</span></div>
+          <div><b>1 credit / sec</b><span>video at 720p</span></div>
+          <div><b>2 credits / sec</b><span>video at 1080p</span></div>
+        </Reveal>
+        <p className="fine">Prices in INR. Launch pricing, which may change once we&apos;ve measured real costs in beta.</p>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- trust ------------------------------- */
+const TRUST = [
+  { h: "Deleted after 24 hours", d: "Uploads and results are removed automatically a day after you make them." },
+  { h: "No watermark removal", d: "CutOut won't strip watermarks or AI labels. They exist to tell people what's real." },
+  { h: "Ads you can see coming", d: "Free jobs unlock after short rewarded ads: 3 per image, 5 per video. That's what keeps the free tier free." },
+  { h: "No subscription", d: "Buy a credit pack when you need one. Nothing renews in the background." },
+];
+
+export function Trust() {
+  return (
+    <section className="sec dark panel" id="trust">
+      <div className="wrap">
+        <Reveal className="sec-head">
+          <Eyebrow>Straight answers</Eyebrow>
+          <h2>What we do, <em>and what we don&apos;t.</em></h2>
+        </Reveal>
+        <div className="trust">
+          {TRUST.map((t, i) => (
+            <Reveal key={t.h} delay={i * 80}>
+              <div className="trust-card spotlight" onPointerMove={spot}>
+                <span className="n">0{i + 1}</span>
+                <h3>{t.h}</h3>
+                <p>{t.d}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------- faq -------------------------------- */
+const FAQS = [
+  ["Is it really free?", "Yes. You get 2 free image jobs without signing in, then 10 a day with Google, plus 1 free video clip a day (5 seconds, 480p). Each free job unlocks after short rewarded ads. Stickers, profile pictures, ID photos and thumbnails made from a cutout don't cost anything extra."],
+  ["Is image generation free?", "No. Generating images uses credits only, 1 credit per image, with no ad option. Every generated image is labelled as AI-made in its file data."],
+  ["Are the ID photos accepted?", "They're sized and framed to each document's published rules, on a plain background. Officials still check expression, glasses and lighting, so read the requirements before you submit."],
+  ["How good is the video tracking?", "It works well on a clear subject, and it's still in beta. Fast motion, heavy blur, or two very similar people can make it slip. When it does, one correction click on that frame re-runs tracking from there."],
+  ["What can I export?", "Images: transparent PNG, or flattened onto a colour. Video: WebM with transparency, or MP4 over a solid colour."],
+  ["Do you keep my files?", "No. Uploads and results are deleted automatically after 24 hours."],
+  ["Can it remove watermarks?", "No, and it won't. CutOut only removes backgrounds."],
+  ["Is there an API?", "Yes. It's a small REST API with prepaid billing and no ads. You get 50 free images a month, then pay per image or per second of video."],
+];
+
+export function Faq() {
+  const [open, setOpen] = useState<number | null>(0);
+  return (
+    <section className="sec" id="faq">
+      <div className="wrap faq-grid">
+        <Reveal className="faq-head">
+          <Eyebrow>FAQ</Eyebrow>
+          <h2>Questions, <em>answered.</em></h2>
+          <p className="sub">Something missing? Use the report link in the footer and we&apos;ll get back to you.</p>
+        </Reveal>
+        <div className="faq">
+          {FAQS.map(([q, a], i) => (
+            <div key={i} className={`qa ${open === i ? "open" : ""}`}>
+              <button id={`faq-${i + 1}`} aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)}>
+                {q}<span className="pm" aria-hidden>+</span>
+              </button>
+              <div className="ans"><div>{a}</div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------- cta -------------------------------- */
+export function Cta() {
+  const [email, setEmail] = useState("");
+  const join = api.waitlist.join.useMutation();
+  return (
+    <section className="sec cta-sec">
+      <div className="wrap">
+        <Reveal className="cta">
+          <img src="/mark.png" alt="" className="cta-mark" aria-hidden />
+          <h2>Try it on <em>your own</em> photo.</h2>
+          <p>2 free cutouts, no sign-up. Want news when new tools land? Leave your email.</p>
+          <div className="cta-row">
+            <Link href="/app" className="btn btn-k" id="cta-try">Open CutOut <span className="arrow">→</span></Link>
+            <form onSubmit={(e) => { e.preventDefault(); join.mutate({ email }); }}>
+              <input id="cta-email" type="email" required placeholder="you@studio.in" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <button id="cta-submit" className="btn btn-y btn-sm" disabled={join.isPending}>{join.isPending ? "Joining…" : "Get early access"}</button>
+            </form>
+          </div>
+          <div className="msg" aria-live="polite">
+            {join.data && (join.data.already ? "You're already on the list :)" : "You're on the list :)")}
+            {join.error && "Please enter a valid email."}
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- footer ------------------------------- */
+export function Footer() {
+  return (
+    <footer className="footer">
+      <div className="wrap">
+        <div className="foot">
+          <div>
+            <Logo dark size={72} />
+            <p className="foot-note">Background removal for images and video. Made in India.</p>
+          </div>
+          <div className="foot-cols">
+            <div><h4>Product</h4><Link href="/app">Studio</Link><a href="#tools">Tools</a><a href="#pricing">Pricing</a></div>
+            <div><h4>Account</h4><Link href="/account">Credits</Link><Link href="/account">API keys</Link><a href="#developers">Developers</a></div>
+            <div><h4>Legal</h4><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/report">Report misuse</Link></div>
+          </div>
+        </div>
+        <div className="foot-bottom"><span>© 2026 CutOut</span><span>Uploads auto-delete after 24 hours</span></div>
+        <div className="giant" aria-hidden>CutOut :)</div>
+      </div>
+    </footer>
+  );
+}

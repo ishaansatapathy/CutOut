@@ -134,3 +134,139 @@ export function VideoTool() {
           </div>
           <div className="scrub">
             <button
+              className="play" aria-label={playing ? "Pause" : "Play"}
+              onClick={() => { const v = vid.current!; if (v.paused) { void v.play(); setPlaying(true); } else { v.pause(); setPlaying(false); } }}
+            >{playing ? "❚❚" : "▶"}</button>
+            <input
+              type="range" min={0} max={meta?.dur ?? 0} step={0.01} value={now} aria-label="Scrub video"
+              onChange={(e) => { const v = vid.current!; v.currentTime = Number(e.target.value); setNow(v.currentTime); }}
+            />
+            <span className="t">{now.toFixed(1)}s</span>
+          </div>
+        </div>
+        <aside className="side">
+          <span className="opt-label">Quality</span>
+          <div className="res-opts">
+            {([480, 720, 1080] as Res[]).map((r) => (
+              <button key={r} className={`res ${res === r ? "on" : ""}`} onClick={() => setRes(r)} id={`res-${r}`}>
+                <b>{r}p</b>
+                <small>{r === 480 ? `Free · ${RULES.video.freeSeconds}s · ads` : `${RULES.video.creditsPerSec[r]} credit/sec`}</small>
+              </button>
+            ))}
+          </div>
+          {meta && (
+            <p className="fine-left">
+              Clip is {meta.dur.toFixed(1)}s. We&apos;ll process {seconds.toFixed(1)}s{seconds < meta.dur ? " from the start" : ""}.
+              {!free && <> Cost: <b>{cost} credits</b>.</>}
+            </p>
+          )}
+          <button className="btn btn-k btn-block" onClick={run} disabled={uploading || !points.length} id="video-go">
+            {uploading ? "Uploading…" : "Cut out this video"}
+          </button>
+          <p className="fine-left">Exports WebM with real transparency, or MP4 on a colour. Keeps the original audio.</p>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function VideoResult({ job, setJob, onNew }: { job: Job; setJob: (j: Job) => void; onNew: () => void }) {
+  const [fix, setFix] = useState<number | null>(null);
+  const [fixPts, setFixPts] = useState<NPt[]>([]);
+  const [keep, setKeep] = useState(false);
+  const [color, setColor] = useState("#ffffff");
+  const [error, setError] = useState<string | null>(null);
+  const done = job.status === "done";
+  const samples = Array.from({ length: 8 }, (_, i) => Math.round((i * (job.frames - 1)) / 7));
+  const bust = `${job.status}-${job.progress}`;
+
+  const correct = async () => {
+    if (fix === null || !fixPts.length) return;
+    setError(null);
+    const r = await fetch(`/ai/v1/videos/${job.id}/correct`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ time: fix / job.fps, norm: true, points: fixPts }),
+    });
+    if (!r.ok) return setError(await errorText(r));
+    setJob(await r.json());
+    setFix(null);
+    setFixPts([]);
+  };
+
+  if (job.status === "failed") {
+    return (
+      <div className="tool-body">
+        <div className="alert">Processing failed: {job.error ?? "unknown error"}</div>
+        <button className="btn btn-k" onClick={onNew}>Try another video</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tool-body">
+      {error && <div className="alert" role="alert" onClick={() => setError(null)}>{error}</div>}
+      {!done ? (
+        <div className="vprogress">
+          <b>{job.status === "queued" ? "Waiting for the GPU…" : job.progress < 0.9 ? "Tracking your subject…" : "Refining edges and encoding…"}</b>
+          <div className="pbar"><i style={{ width: `${Math.round(job.progress * 100)}%` }} /></div>
+          <span>{Math.round(job.progress * 100)}% · {job.frames} frames at {job.height}p</span>
+        </div>
+      ) : (
+        <div className="work">
+          <div className="vout checker">
+            <video src={`/ai/v1/jobs/${job.id}/result?format=webm&v=${bust}`} autoPlay loop muted playsInline controls />
+          </div>
+          <aside className="side">
+            <span className="opt-label">Download</span>
+            <button className="btn btn-k btn-block" onClick={() => download(`/ai/v1/jobs/${job.id}/result?format=webm`, "cutout.webm")} id="video-webm">WebM · transparent ↓</button>
+            <div className="mp4-row">
+              <label className="swatch pick big" title="MP4 background colour">
+                <i style={{ background: color }} />
+                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="MP4 background colour" />
+              </label>
+              <button className="btn btn-line btn-block" onClick={() => download(`/ai/v1/jobs/${job.id}/result?format=mp4&color=${encodeURIComponent(color)}`, "cutout.mp4")} id="video-mp4">MP4 on this colour ↓</button>
+            </div>
+            <button className="btn btn-line btn-block" onClick={onNew}>New video</button>
+            <p className="fine-left">Spot a bad frame below? Click it, add a correction click, and only that part re-runs.</p>
+          </aside>
+        </div>
+      )}
+      {done && (
+        <>
+          <span className="opt-label">Check frames</span>
+          <div className="vsamples">
+            {samples.map((f) => (
+              <button key={f} className={fix === f ? "on" : ""} onClick={() => { setFix(f); setFixPts([]); }} aria-label={`Frame ${f + 1}`}>
+                <img src={`/ai/v1/jobs/${job.id}/frame/${f}?v=${bust}`} alt="" loading="lazy" />
+                <small>{(f / job.fps).toFixed(1)}s</small>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {fix !== null && done && (
+        <div className="vfix">
+          <div className="toolbar">
+            <div className="seg">
+              <button className={keep ? "on" : ""} onClick={() => setKeep(true)}>＋ Add missed part</button>
+              <button className={!keep ? "on" : ""} onClick={() => setKeep(false)}>－ Remove wrong part</button>
+            </div>
+            <span className="spacer" />
+            <button className="btn btn-line btn-sm" onClick={() => setFix(null)}>Cancel</button>
+            <button className="btn btn-k btn-sm" disabled={!fixPts.length} onClick={correct} id="video-correct">Re-run from {(fix / job.fps).toFixed(1)}s</button>
+          </div>
+          <div
+            className="vfix-stage" style={{ aspectRatio: `${job.width} / ${job.height}`, width: `min(100%, calc(60vh * ${job.width / job.height}))` }}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setFixPts((p) => [...p, { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, label: keep ? 1 : 0 }]);
+            }}
+          >
+            <img src={`/ai/v1/jobs/${job.id}/frame/${fix}?v=${bust}`} alt={`Frame ${fix + 1}`} />
+            {fixPts.map((p, i) => <span key={i} className={`spt ${p.label ? "add" : "rem"}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

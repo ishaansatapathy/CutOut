@@ -88,3 +88,92 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
     setMsg(null);
     try {
       const o = await create.mutateAsync({ pack });
+      if (!o.keyId) {
+        await devComplete.mutateAsync({ orderId: o.orderId });
+        await utils.me.invalidate();
+        setMsg(`Test purchase done: +${o.pack.credits} credits.`);
+        return;
+      }
+      await loadRazorpay();
+      new window.Razorpay!({
+        key: o.keyId, order_id: o.orderId, amount: o.amount, currency: "INR", name: "CutOut :)",
+        description: `${o.pack.credits} credits`, prefill: { email: me.data?.user?.email ?? "" },
+        theme: { color: "#FFD60A" }, method: { upi: true, card: true, netbanking: true, wallet: true },
+        handler: async (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          await verify.mutateAsync({ orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature });
+          await utils.me.invalidate();
+          setMsg(`Payment received: +${o.pack.credits} credits.`);
+        },
+      }).open();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+
+  return (
+    <Modal open={reason !== null} onClose={onClose} title="Buy credits" wide>
+      {reason && <p className="modal-note">{reason}</p>}
+      {!me.data?.user ? (
+        <p className="modal-note">Sign in first so your credits are saved to your account.</p>
+      ) : (
+        <>
+          <div className="packs">
+            {packs.data?.map((p) => (
+              <button key={p.id} className={`pack ${p.id === "creator" ? "hot" : ""}`} onClick={() => buy(p.id)} disabled={create.isPending} id={`buy-${p.id}`}>
+                <b>₹{p.price}</b>
+                <span>{p.credits} credits</span>
+                <small>₹{(p.price / p.credits).toFixed(2)} / credit</small>
+              </button>
+            ))}
+          </div>
+          <p className="modal-fine">
+            1 credit = 1 image or generation · video is 1 credit/sec at 720p, 2 at 1080p · paid jobs have no ads.
+            {me.data.devPayments && <><br /><span className="dev-tag">Test mode</span> Razorpay keys aren&apos;t set, so purchases are simulated.</>}
+          </p>
+        </>
+      )}
+      {msg && <p className="modal-msg" role="status">{msg}</p>}
+    </Modal>
+  );
+}
+
+export function AccountBar() {
+  const me = useMe();
+  const ui = useAccountUi();
+  const utils = api.useUtils();
+  if (!me.data) return <div className="acct skeleton-line" />;
+  const { user, usage } = me.data;
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    await utils.invalidate();
+  };
+  return (
+    <div className="acct">
+      <div className="acct-meter" title="Free image uses">
+        <div className="cells">
+          {Array.from({ length: usage.imageLimit }).map((_, i) => <i key={i} className={i < usage.imageLeft ? "on" : ""} />)}
+        </div>
+        <span><b>{usage.imageLeft}</b> free {user ? "today" : "left"}</span>
+      </div>
+      {user ? (
+        <>
+          <button className="acct-credits" onClick={() => ui.buy()} id="acct-credits">
+            <b>{usage.credits}</b> credits <span>+</span>
+          </button>
+          <details className="acct-menu">
+            <summary aria-label="Account menu">
+              {user.picture ? <img src={user.picture} alt="" /> : <span>{(user.name ?? user.email)[0].toUpperCase()}</span>}
+            </summary>
+            <div className="acct-pop">
+              <p><b>{user.name ?? "Signed in"}</b><br />{user.email}</p>
+              <a href="/account">Account & API keys</a>
+              <button onClick={logout} id="logout">Sign out</button>
+            </div>
+          </details>
+        </>
+      ) : (
+        <button className="btn btn-k btn-sm" onClick={() => ui.signIn()} id="acct-signin">Sign in</button>
+      )}
+    </div>
+  );
+}

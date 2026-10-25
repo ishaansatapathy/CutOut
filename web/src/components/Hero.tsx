@@ -83,3 +83,88 @@ function HeroDemo() {
     card.current!.style.transform = `perspective(1600px) rotateX(${(-y * 4).toFixed(2)}deg) rotateY(${(x * 5).toFixed(2)}deg)`;
   };
 
+  const alpha = useRef<ImageData | null>(null);
+  const preload = () => { loadAlpha().then((a) => (alpha.current = a), () => {}); };
+  useEffect(() => { if (visible) preload(); }, [visible]);
+
+  const tryClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width;
+    const fy = (e.clientY - r.top) / r.height;
+    const a = alpha.current;
+    const onSubject = !a || a.data[(Math.floor(fy * a.height) * a.width + Math.floor(fx * a.width)) * 4 + 3] > 100;
+    setPt({ x: fx * 100, y: fy * 100 });
+    setMiss(!onSubject);
+    setP(onSubject ? 1 : 0);
+  };
+
+  const paused = hover || !visible || miss;
+  const chip = miss ? "That's background. Click the person to keep her." : PHASES[p].chip;
+  const style = pt ? ({ "--cx": `${pt.x}%`, "--cy": `${pt.y}%` } as React.CSSProperties) : undefined;
+
+  return (
+    <div className={`wrap demo-wrap ${paused ? "paused" : ""}`} ref={wrap}>
+      <div
+        ref={card}
+        className={`demo phase-${p} ${pt ? "user" : ""} ${miss ? "miss" : ""}`}
+        style={style}
+        onMouseEnter={() => { setHover(true); preload(); }}
+        onTouchStart={preload}
+        onMouseLeave={() => { setHover(false); card.current!.style.transform = ""; }}
+        onPointerMove={tilt}
+      >
+        <div className="demo-bar" aria-hidden>
+          <span className="demo-dots"><i /><i /><i /></span>
+          <span className="demo-tools">
+            <span className="on">＋ Keep</span><span>－ Remove</span><span className="hide-sm">▭ Box</span>
+          </span>
+          <span className="demo-export">Download PNG ↓</span>
+        </div>
+        <div
+          className="demo-canvas"
+          onClick={tryClick}
+          role="button"
+          tabIndex={0}
+          aria-label="Demo photo. Click the person to see the background removed."
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setMiss(false); setP(1); } }}
+        >
+          <img className="layer" src="/demo/before.webp" alt="" width={1200} height={896} fetchPriority="high" />
+          <div className="layer d-mask" />
+          <div className="layer d-reveal">
+            <div className="layer checker" />
+            <div className="layer d-solid" />
+            <img className="layer" src="/demo/cutout.webp" alt="" width={1200} height={896} />
+          </div>
+          <span className="d-point" />
+          <svg className="d-cursor" viewBox="0 0 24 24" width="30" height="30" aria-hidden>
+            <path d="M4 2.5l15.5 7.2-6.6 2.1-2.3 6.7z" fill="#0B0B0B" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
+          </svg>
+          <span className="d-chip" key={chip}>{chip}</span>
+        </div>
+      </div>
+      <div className="demo-steps">
+        {PHASES.map((ph, i) => (
+          <button
+            key={i}
+            id={`demo-step-${i + 1}`}
+            className={i === p && !miss ? "on" : i < p ? "done" : ""}
+            onClick={() => { setMiss(false); setP(i); }}
+          >
+            <span className="n">{i + 1}</span>
+            <span className="t">{ph.label}</span>
+            <span
+              className="bar"
+              key={i === p ? `run-${p}-${pt?.x ?? ""}` : "idle"}
+              style={{ ["--d" as string]: `${ph.ms}ms` }}
+              onAnimationEnd={() => {
+                if (i !== p || miss) return;
+                if (i === PHASES.length - 1) setPt(null);
+                setP((cur) => (cur === i ? (i + 1) % PHASES.length : cur));
+              }}
+            />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

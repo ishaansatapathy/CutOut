@@ -243,3 +243,125 @@ def _track(job: dict, start_from: int | None):
     elif segment_frame is not None:
         rgb = cv2.cvtColor(_imread(str(d / "frames" / f"{f0:05d}.jpg")), cv2.COLOR_BGR2RGB)
         m = segment_frame(rgb, prompt.get("points") or [], prompt.get("box"))
+        if m is not None and m.any():
+            seed = (m > 0).astype(np.uint8)
+    ctx = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_available() else torch.inference_mode()
+    with gpu_lock, torch.inference_mode(), ctx:
+        s, e = chunks[home]
+        _track_chunk(pred, d, s, e, f0, seed, None if start_from is None else False, masks, report)
+        for i in range(home + 1, len(chunks)):
+            s, e = chunks[i]
+            _track_chunk(pred, d, s, e, s, masks[s].astype(np.uint8), False, masks, report)
+        if start_from is None:
+            for i in range(home - 1, -1, -1):
+                s, e = chunks[i]
+                _track_chunk(pred, d, s, e, e - 1, masks[e - 1].astype(np.uint8), True, masks, report)
+    for i, m in masks.items():
+        cv2.imwrite(str(mdir / f"{i:05d}.png"), (m * 255).astype(np.uint8))
+
+
+def _alpha_frames(job: dict):
+    """Guided-filter edges plus light temporal smoothing in the edge band to stop flicker."""
+    d = JOBS_DIR / job["id"]
+    prev = None
+    for i in range(job["frames"]):
+        rgb = cv2.cvtColor(_imread(str(d / "frames" / f"{i:05d}.jpg")), cv2.COLOR_BGR2RGB)
+        mp = d / "masks" / f"{i:05d}.png"
+        m = _imread(str(mp), cv2.IMREAD_GRAYSCALE) if mp.exists() else np.zeros(rgb.shape[:2], np.uint8)
+        a = guided_alpha(rgb, m, radius=6).astype(np.float32)
+        if prev is not None:
+            band = cv2.dilate(m, np.ones((9, 9), np.uint8)) - cv2.erode(m, np.ones((9, 9), np.uint8))
+            a = np.where(band > 0, 0.65 * a + 0.35 * prev, a)
+        prev = a
+        yield i, rgb, a.astype(np.uint8)
+
+
+def _encode(job: dict):
+    d = JOBS_DIR / job["id"]
+    out = d / "rgba"
+    out.mkdir(exist_ok=True)
+    n = job["frames"]
+    for i, rgb, a in _alpha_frames(job):
+        cv2.imwrite(str(out / f"{i:05d}.png"), cv2.cvtColor(np.dstack([rgb, a]), cv2.COLOR_RGBA2BGRA))
+        job["progress"] = round(0.9 + 0.07 * (i + 1) / n, 3)
+    fps = str(job["fps"])
+    audio = d / "audio.ogg"
+    a_in = ["-i", str(audio)] if audio.exists() else []
+    _run([FFMPEG, "-v", "error", "-y", "-framerate", fps, "-i", str(out / "%05d.png"), *a_in,
+          "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0", "-b:v", "0", "-crf", "30",
+          *(["-c:a", "copy", "-shortest"] if a_in else []), str(d / "cutout.webm")])
+    job["outputs"]["webm"] = "cutout.webm"
+    job["progress"] = 1.0
+
+
+def render_mp4(jid: str, color: str) -> Path:
+    job = jobs.get(jid)
+    if not job or "webm" not in job["outputs"]:
+        raise VideoError("Video isn't ready yet.")
+    c = color.lstrip("#")
+    if len(c) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in c):
+        raise VideoError("Colour must be a hex value like #ffffff.")
+    d = JOBS_DIR / jid
+    dst = d / f"cutout_{c.lower()}.mp4"
+    if not dst.exists():
+        audio = d / "audio.ogg"
+        a_in = ["-i", str(audio)] if audio.exists() else []
+        _run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=0x{c}:s={job['width']}x{job['height']}:r={job['fps']}",
+              "-framerate", str(job["fps"]), "-i", str(d / "rgba" / "%05d.png"), *a_in,
+              "-filter_complex", "[0][1]overlay=shortest=1,format=yuv420p",
+              "-c:v", "libx264", "-crf", "20", "-preset", "veryfast",
+              *(["-map", "2:a", "-c:a", "aac", "-shortest"] if a_in else []), str(dst)])
+    return dst
+
+
+def preview_frame(jid: str, i: int) -> bytes:
+    job = jobs.get(jid)
+    if not job:
+        raise VideoError("Job not found or expired.")
+    d = JOBS_DIR / jid
+    i = max(0, min(job["frames"] - 1, i))
+    bgr = _imread(str(d / "frames" / f"{i:05d}.jpg"))
+    mp = d / "masks" / f"{i:05d}.png"
+    if mp.exists():
+        m = _imread(str(mp), cv2.IMREAD_GRAYSCALE) > 0
+        tint = bgr.copy()
+        tint[m] = (0.45 * np.array([10, 214, 255]) + 0.55 * bgr[m]).astype(np.uint8)
+        bgr = tint
+    return cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+
+
+def file_path(jid: str, name: str) -> Path:
+    job = jobs.get(jid)
+    if not job or name not in job["outputs"].values():
+        raise VideoError("File not available.")
+    return JOBS_DIR / jid / name
+
+
+def _worker():
+    while True:
+        jid, kind = _q.get()
+        job = jobs.get(jid)
+        if not job:
+            continue
+        try:
+            job["status"] = "running"
+            start = int(job["prompts"][-1].get("frame", 0)) if kind == "correct" else None
+            _track(job, start)
+            _encode(job)
+            job["status"] = "done"
+        except Exception as e:
+            job["status"], job["error"] = "failed", str(e)[:300]
+        _save(job)
+
+
+def gc():
+    now = time.time()
+    for jid in [k for k, j in jobs.items() if now - j["created"] > TTL_SECONDS]:
+        shutil.rmtree(JOBS_DIR / jid, ignore_errors=True)
+        jobs.pop(jid, None)
+    for d in JOBS_DIR.iterdir():
+        if d.is_dir() and d.name not in jobs and now - d.stat().st_mtime > TTL_SECONDS:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+threading.Thread(target=_worker, daemon=True).start()

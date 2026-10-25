@@ -1,0 +1,2 @@
+project-includes = ["app"]
+python-interpreter-path = ".venv/Scripts/python.exe"

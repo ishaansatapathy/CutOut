@@ -111,6 +111,7 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
         await devComplete.mutateAsync({ orderId: o.orderId });
         await utils.me.invalidate();
         setMsg(`Test purchase done: +${o.pack.credits} credits.`);
+        setPendingPack(null);
         setTimeout(() => onClose(), 1500);
         return;
       }
@@ -126,9 +127,7 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
         theme: { color: "#FFD60A" },
         method: { upi: true, card: true, netbanking: true, wallet: true },
         modal: {
-          ondismiss: () => {
-            setPendingPack(null);
-          },
+          ondismiss: () => setPendingPack(null),
         },
         handler: async (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           try {
@@ -139,15 +138,21 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
             });
             await utils.me.invalidate();
             setMsg(`Payment received! +${o.pack.credits} credits added to your account.`);
+            setPendingPack(null);
             setTimeout(() => onClose(), 2000);
           } catch (verErr) {
             setErr((verErr as Error).message || "Payment verification failed.");
+            setPendingPack(null);
           }
         },
       }).open();
+      // pendingPack stays set on purpose: Razorpay's own checkout overlay is now on
+      // screen, and clearing the lock here (e.g. in a `finally`) would re-enable the
+      // pack buttons underneath it, letting a stray click spawn a second order while
+      // the first checkout is still open. It's cleared above in every real end state:
+      // dismiss, verify success, verify failure, and the catch below.
     } catch (e) {
       setErr((e as Error).message);
-    } finally {
       setPendingPack(null);
     }
   };

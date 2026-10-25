@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Videor – One-click background removal</title>
+  <meta name="description" content="Click your subject, get a clean transparent PNG. AI background removal with correction clicks." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <header>
+    <div class="logo">▶ videor</div>
+    <span class="pill" id="engine">engine…</span>
+  </header>
+
+  <main>
+    <section class="hero" id="hero">
+      <h1>Remove backgrounds with <span class="grad">one click</span></h1>
+      <p>Click your subject or draw a box. Fix mistakes with extra clicks. Download a transparent PNG.</p>
+      <label class="drop" id="drop" for="file">
+        <div class="icon">⬆</div>
+        <strong>Drop an image here</strong>
+        <span>or click to browse · up to 20 MB</span>
+        <input type="file" id="file" accept="image/*" hidden />
+      </label>
+    </section>
+
+    <section class="editor" id="editor" hidden>
+      <div class="toolbar">
+        <div class="seg" id="modes">
+          <button data-mode="add" class="active" id="mode-add">＋ Keep</button>
+          <button data-mode="remove" id="mode-remove">－ Remove</button>
+          <button data-mode="box" id="mode-box">▭ Box</button>
+        </div>
+        <div class="seg" id="bgs">
+          <button data-bg="" class="active" id="bg-none" title="Transparent">▦</button>
+          <button data-bg="#ffffff" id="bg-white" style="--c:#fff"></button>
+          <button data-bg="#111111" id="bg-black" style="--c:#111"></button>
+          <button data-bg="#22c55e" id="bg-green" style="--c:#22c55e"></button>
+        </div>
+        <div class="spacer"></div>
+        <button class="ghost" id="undo">Undo</button>
+        <button class="ghost" id="reset">New image</button>
+        <button class="primary" id="download">Download PNG</button>
+      </div>
+      <div class="stage checker" id="stage">
+        <canvas id="base"></canvas>
+        <canvas id="cut"></canvas>
+        <canvas id="ui"></canvas>
+        <div class="busy" id="busy">Segmenting…</div>
+      </div>
+      <p class="hint">Green dots keep, red dots remove. Use Box to outline the subject.</p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

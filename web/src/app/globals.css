@@ -495,14 +495,11 @@ em { font-family: var(--f-serif), serif; font-style: italic; font-weight: 400; l
 .tl { background: var(--k); border-radius: 28px; padding: 16px; box-shadow: 0 40px 80px -40px rgba(11,11,11,.55); }
 .tl-top { display: flex; justify-content: space-between; color: var(--muted-d); font-size: 13px; padding: 4px 6px 14px; font-family: ui-monospace, "Cascadia Code", Menlo, monospace; }
 .tl-file { color: var(--w); }
-.tl-stack { position: relative; --ph: 0%; animation: playhead 7s linear infinite; }
-@keyframes playhead { to { --ph: 100%; } }
-.tl-stack { cursor: ew-resize; touch-action: pan-y; }
-.tl-stack.scrub { animation: none; }
+.tl-stack { position: relative; --ph: 0%; cursor: ew-resize; touch-action: none; padding-bottom: 24px; margin-bottom: -24px; }
 .tl-stack.scrub .tl-head { box-shadow: 0 0 0 3px rgba(11,11,11,.6), 0 0 18px rgba(255,214,10,.8); }
 .tl-time { transition: color .2s; }
 .tl-stack.scrub ~ .tl-top .tl-time, .tl:has(.scrub) .tl-time { color: var(--y); }
-.tl-frames { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; }
+.tl-frames { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; pointer-events: none; }
 .tl-frames.tinted { position: absolute; inset: 0; clip-path: inset(0 calc(100% - var(--ph)) 0 0); }
 .tf { position: relative; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; background: var(--k-3); }
 .tf-in { position: absolute; inset: 0; transform: scale(1.5); }
@@ -511,12 +508,12 @@ em { font-family: var(--f-serif), serif; font-style: italic; font-weight: 400; l
 .tl-frames:not(.tinted) .tf img { filter: grayscale(.4) brightness(.8); }
 .tinted .tf.lost i { opacity: 0; }
 .tinted .tf.lost::after { content: ""; position: absolute; inset: 0; border: 2px dashed var(--y); border-radius: 10px; }
-.tl-head { position: absolute; top: -8px; bottom: -8px; left: var(--ph); width: 3px; margin-left: -1.5px; background: var(--y); border-radius: 3px; box-shadow: 0 0 0 3px rgba(11,11,11,.6); }
+.tl-head { position: absolute; top: -8px; bottom: 16px; left: var(--ph); width: 3px; margin-left: -1.5px; background: var(--y); border-radius: 3px; box-shadow: 0 0 0 3px rgba(11,11,11,.6); pointer-events: none; }
 .tl-head::before { content: ""; position: absolute; top: -6px; left: 50%; width: 13px; height: 13px; translate: -50% 0; border-radius: 50%; background: var(--y); }
 .tl-fix {
-  position: absolute; top: 100%; margin-top: 14px; left: calc((100% + 6px) * var(--i) / 12 + (100% - 66px) / 24);
+  position: absolute; top: calc(100% - 24px); margin-top: 14px; left: calc((100% + 6px) * var(--i) / 12 + (100% - 66px) / 24);
   translate: -50% 0; white-space: nowrap; padding: 6px 12px; border-radius: 999px; background: var(--y); color: var(--k);
-  font-size: 12px; font-weight: 700;
+  font-size: 12px; font-weight: 700; pointer-events: none; user-select: none;
 }
 .tl-fix::before { content: ""; position: absolute; left: 50%; top: -5px; width: 10px; height: 10px; translate: -50% 0; rotate: 45deg; background: var(--y); }
 .tl { padding-bottom: 60px; }

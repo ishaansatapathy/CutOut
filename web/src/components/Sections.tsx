@@ -349,21 +349,58 @@ export function Video() {
   const frames = Array.from({ length: 12 });
   const stack = useRef<HTMLDivElement>(null);
   const counter = useRef<HTMLSpanElement>(null);
+  const posRef = useRef(0);
+  const isHovered = useRef(false);
+  const lastTime = useRef<number | null>(null);
+
+  useEffect(() => {
+    let reqId: number;
+    const DURATION = 7000; // 7s for full sweep
+
+    const tick = (now: number) => {
+      if (lastTime.current === null) lastTime.current = now;
+      const dt = now - lastTime.current;
+      lastTime.current = now;
+
+      if (!isHovered.current && stack.current) {
+        posRef.current = (posRef.current + dt / DURATION) % 1;
+        const f = posRef.current;
+        stack.current.style.setProperty("--ph", `${(f * 100).toFixed(2)}%`);
+        if (counter.current) {
+          const frame = Math.round(f * (TOTAL_FRAMES - 1)) + 1;
+          const sec = (f * 12).toFixed(1).padStart(4, "0");
+          counter.current.textContent = `Frame ${frame} / ${TOTAL_FRAMES} · 00:${sec}`;
+        }
+      }
+      reqId = requestAnimationFrame(tick);
+    };
+
+    reqId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(reqId);
+  }, []);
 
   const scrub = (e: React.PointerEvent) => {
-    const r = stack.current!.getBoundingClientRect();
+    if (!stack.current) return;
+    isHovered.current = true;
+    stack.current.classList.add("scrub");
+    const r = stack.current.getBoundingClientRect();
     const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    stack.current!.classList.add("scrub");
-    stack.current!.style.setProperty("--ph", `${f * 100}%`);
-    const frame = Math.round(f * (TOTAL_FRAMES - 1)) + 1;
-    const sec = (f * 12).toFixed(1).padStart(4, "0");
-    counter.current!.textContent = `Frame ${frame} / ${TOTAL_FRAMES} · 00:${sec}`;
+    posRef.current = f;
+    stack.current.style.setProperty("--ph", `${(f * 100).toFixed(2)}%`);
+    if (counter.current) {
+      const frame = Math.round(f * (TOTAL_FRAMES - 1)) + 1;
+      const sec = (f * 12).toFixed(1).padStart(4, "0");
+      counter.current.textContent = `Frame ${frame} / ${TOTAL_FRAMES} · 00:${sec}`;
+    }
   };
+
   const release = () => {
-    stack.current!.classList.remove("scrub");
-    stack.current!.style.removeProperty("--ph");
-    counter.current!.textContent = "Hover to scrub";
+    if (!stack.current) return;
+    isHovered.current = false;
+    stack.current.classList.remove("scrub");
+    lastTime.current = null; // Smoothly continue from current position
   };
+
   const strip = (tinted: boolean) => (
     <div className={`tl-frames ${tinted ? "tinted" : ""}`} aria-hidden>
       {frames.map((_, i) => (
@@ -396,11 +433,12 @@ export function Video() {
           <div className="tl">
             <div className="tl-top">
               <span className="tl-file">market_walk.mp4</span>
-              <span className="tl-time" ref={counter}>Hover to scrub</span>
+              <span className="tl-time" ref={counter}>Frame 1 / 360 · 00:00.0</span>
             </div>
             <div
               className="tl-stack"
               ref={stack}
+              onPointerEnter={scrub}
               onPointerMove={scrub}
               onPointerDown={scrub}
               onPointerLeave={release}

@@ -106,7 +106,7 @@ def create(src: Path, prompt: dict, limits: dict, owner: str) -> dict:
         "id": jid, "type": "video", "status": "queued", "progress": 0.0, "owner": owner,
         "frames": n, "fps": fps, "width": fw, "height": fh,
         "seconds": round(n / fps, 2), "prompts": [_normalize(prompt, fps, fw, fh, n)], "created": time.time(),
-        "error": None, "outputs": {},
+        "error": None, "outputs": {}, "webhook_url": prompt.get("webhook_url"),
     }
     _save(job)
     jobs[jid] = job
@@ -337,6 +337,23 @@ def file_path(jid: str, name: str) -> Path:
     return JOBS_DIR / jid / name
 
 
+def _notify_webhook(url: str, payload: dict):
+    def _send():
+        try:
+            import urllib.request
+            data = json.dumps(payload).encode()
+            req = urllib.request.Request(
+                url, data=data,
+                headers={"Content-Type": "application/json", "User-Agent": "CutOut-Webhook/1.0"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=15):
+                pass
+        except Exception as e:
+            print(f"Webhook notification to {url} failed: {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+
 def _worker():
     while True:
         jid, kind = _q.get()
@@ -352,6 +369,8 @@ def _worker():
         except Exception as e:
             job["status"], job["error"] = "failed", str(e)[:300]
         _save(job)
+        if job.get("webhook_url"):
+            _notify_webhook(job["webhook_url"], public(job))
 
 
 def gc():

@@ -208,3 +208,108 @@ def _generator():
         dtype=torch.float16 if device() == "cuda" else torch.float32,
         variant="fp16" if device() == "cuda" else None,
     )
+    if device() == "cuda":
+        pipe.enable_model_cpu_offload()
+    return pipe
+
+
+def _safety():
+    from transformers import pipeline
+    return pipeline("image-classification", model=os.getenv("SAFETY_MODEL", "Falconsai/nsfw_image_detection"),
+                    device=0 if device() == "cuda" else -1)
+
+
+BLOCKED = re.compile(
+    r"\b(nude|nudity|naked|nsfw|porn\w*|sex|sexy|sexual|explicit|erotic\w*|lingerie|topless|hentai|loli\w*|undress\w*)\b",
+    re.I,
+)
+
+PROVIDER = os.getenv("GEN_PROVIDER", "local")
+SIZES = {"square": (1024, 1024), "portrait": (1024, 1536), "landscape": (1536, 1024)}
+
+
+def _http_json(url: str, payload: dict, headers: dict, timeout=120) -> dict:
+    import json
+    import urllib.request
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def _img_from_b64(b64: str) -> Image.Image:
+    import base64
+    import io
+    return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+
+
+def _gen_openai(prompt: str, size: str) -> Image.Image:
+    import urllib.error
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("Image generation is not configured on this server.")
+    model = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+    dims = {"square": "1024x1024", "portrait": "1024x1536", "landscape": "1536x1024"}[size]
+    try:
+        j = _http_json("https://api.openai.com/v1/images/generations",
+                       {"model": model, "prompt": prompt, "size": dims, "n": 1},
+                       {"Authorization": f"Bearer {key}"})
+    except urllib.error.HTTPError as e:
+        raise ValueError("The image provider rejected that prompt.") if e.code in (400, 422) else RuntimeError("Image generation failed. Try again.")
+    d = j["data"][0]
+    if d.get("b64_json"):
+        return _img_from_b64(d["b64_json"])
+    import urllib.request
+    with urllib.request.urlopen(d["url"], timeout=60) as r:
+        import io
+        return Image.open(io.BytesIO(r.read())).convert("RGB")
+
+
+def _gen_gemini(prompt: str) -> Image.Image:
+    import urllib.error
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("Image generation is not configured on this server.")
+    model = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    try:
+        j = _http_json(url, {"contents": [{"parts": [{"text": prompt}]}],
+                             "generationConfig": {"responseModalities": ["IMAGE"]}}, {})
+    except urllib.error.HTTPError as e:
+        raise ValueError("The image provider rejected that prompt.") if e.code in (400, 422) else RuntimeError("Image generation failed. Try again.")
+    for part in j.get("candidates", [{}])[0].get("content", {}).get("parts", []):
+        inline = part.get("inlineData") or part.get("inline_data")
+        if inline and inline.get("data"):
+            return _img_from_b64(inline["data"])
+    raise ValueError("The image provider returned no image for that prompt.")
+
+
+def _gen_local(prompt: str, size: str, seed: int | None) -> Image.Image:
+    pipe = _load("generate", _generator)
+    if pipe is None:
+        raise RuntimeError("Image generation is not available on this server.")
+    torch = _torch()
+    w, h = {"square": (512, 512), "portrait": (512, 768), "landscape": (768, 512)}[size]
+    g = torch.Generator("cpu").manual_seed(seed if seed is not None else int.from_bytes(os.urandom(4), "little"))
+    with gpu_lock, torch.inference_mode():
+        img = pipe(prompt=prompt, width=w, height=h, num_inference_steps=2, guidance_scale=0.0, generator=g).images[0]
+    safety = _load("safety", _safety)
+    if safety is None:
+        raise RuntimeError("Safety checker unavailable; generation disabled.")
+    with gpu_lock:
+        scores = {r["label"].lower(): r["score"] for r in safety(img)}
+    if scores.get("nsfw", 0) > 0.4:
+        raise ValueError("The result was flagged as unsafe and was not returned.")
+    return img
+
+
+def generate(prompt: str, size: str, seed: int | None) -> Image.Image:
+    if BLOCKED.search(prompt):
+        raise ValueError("This prompt isn't allowed.")
+    if size not in SIZES:
+        size = "square"
+    if PROVIDER == "openai":
+        return _gen_openai(prompt, size)
+    if PROVIDER == "gemini":
+        return _gen_gemini(prompt)
+    return _gen_local(prompt, size, seed)

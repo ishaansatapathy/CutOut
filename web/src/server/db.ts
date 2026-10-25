@@ -84,3 +84,89 @@ function sqliteBackend(): Backend {
     return { out, args: clean(args) };
   };
   const raw: Exec = {
+    all: async (sql, params = []) => {
+      const { out, args } = toQ(sql, params);
+      return sdb.prepare(out).all(...(args as never[])) as never;
+    },
+    get: async (sql, params = []) => {
+      const { out, args } = toQ(sql, params);
+      return sdb.prepare(out).get(...(args as never[])) as never;
+    },
+    run: async (sql, params = []) => {
+      const { out, args } = toQ(sql, params);
+      return Number(sdb.prepare(out).run(...(args as never[])).changes);
+    },
+  };
+  return {
+    raw,
+    tx: async (fn) => {
+      sdb.exec("BEGIN IMMEDIATE");
+      try {
+        const r = await fn(raw);
+        sdb.exec("COMMIT");
+        return r;
+      } catch (e) {
+        sdb.exec("ROLLBACK");
+        throw e;
+      }
+    },
+    init: async () => {
+      for (const stmt of SCHEMA) sdb.exec(stmt);
+    },
+  };
+}
+
+async function pgBackend(): Promise<Backend> {
+  const mod = await import("pg");
+  const pg = ((mod as unknown as { default?: typeof import("pg") }).default ?? mod) as typeof import("pg");
+  pg.types.setTypeParser(20, (v: string | null) => (v === null ? null : Number(v))); // int8
+  pg.types.setTypeParser(1700, (v: string | null) => (v === null ? null : Number(v))); // numeric
+  const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 8 });
+  const exec = (q: (sql: string, args: unknown[]) => Promise<{ rows: unknown[]; rowCount: number | null }>): Exec => ({
+    all: async (sql, params = []) => (await q(sql, clean(params))).rows as never,
+    get: async (sql, params = []) => ((await q(sql, clean(params))).rows[0] as never) ?? undefined,
+    run: async (sql, params = []) => (await q(sql, clean(params))).rowCount ?? 0,
+  });
+  const raw = exec((sql, args) => pool.query(sql, args));
+  return {
+    raw,
+    tx: async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const r = await fn(exec((sql, args) => client.query(sql, args)));
+        await client.query("COMMIT");
+        return r;
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+    },
+    init: async () => {
+      for (const stmt of SCHEMA) await pool.query(stmt);
+    },
+  };
+}
+
+const g = globalThis as unknown as { __coReady?: Promise<Backend> };
+
+async function boot(): Promise<Backend> {
+  const b = usePg ? await pgBackend() : sqliteBackend();
+  await b.init();
+  return b;
+}
+const ready = (g.__coReady ??= boot());
+
+export const db: Exec = {
+  all: (sql, params) => locked(() => ready.then((b) => b.raw.all(sql, params))),
+  get: (sql, params) => locked(() => ready.then((b) => b.raw.get(sql, params))),
+  run: (sql, params) => locked(() => ready.then((b) => b.raw.run(sql, params))),
+};
+
+export function tx<T>(fn: (x: Exec) => Promise<T>): Promise<T> {
+  return locked(() => ready.then((b) => b.tx(fn)));
+}
+
+export const dbKind = usePg ? "postgres" : "sqlite";

@@ -132,7 +132,7 @@ export function VideoTool() {
               ))}
             </div>
           </div>
-          <div className="scrub">
+          <div className="vplayer-scrub">
             <button
               className="play" aria-label={playing ? "Pause" : "Play"}
               onClick={() => { const v = vid.current!; if (v.paused) { void v.play(); setPlaying(true); } else { v.pause(); setPlaying(false); } }}

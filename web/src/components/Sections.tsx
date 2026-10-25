@@ -382,7 +382,7 @@ export function Video() {
   const scrub = (e: React.PointerEvent) => {
     if (!stack.current) return;
     isHovered.current = true;
-    stack.current.classList.add("scrub");
+    stack.current.classList.add("is-scrubbing");
     const r = stack.current.getBoundingClientRect();
     const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
     posRef.current = f;
@@ -397,7 +397,7 @@ export function Video() {
   const release = () => {
     if (!stack.current) return;
     isHovered.current = false;
-    stack.current.classList.remove("scrub");
+    stack.current.classList.remove("is-scrubbing");
     lastTime.current = null; // Smoothly continue from current position
   };
 

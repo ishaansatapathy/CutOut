@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/trpc/client";
 import { AccountBar, useAccountUi } from "./account";
 import { BatchTool } from "./BatchTool";
@@ -41,6 +41,13 @@ function StudioInner() {
   const t = TOOLS.find((x) => x.id === tool)!;
   const loginError = params.get("login_error");
   const devLoginHint = params.get("login") === "dev";
+
+  useEffect(() => {
+    const buyParam = params.get("buy");
+    if (buyParam) {
+      ui.buy(buyParam);
+    }
+  }, [params, ui]);
 
   const choose = (id: ToolId) => {
     setTool(id);

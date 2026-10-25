@@ -626,7 +626,7 @@ export function Pricing() {
                   <p className="tagline">{p.tagline}</p>
                   <div className="price">₹{p.price}<small>{p.credits ? ` / ${p.credits} credits` : " / always"}</small></div>
                   <ul>{p.features.map((f) => <li key={f}>{f}</li>)}</ul>
-                  <Link href="/app" className={`btn ${popular ? "btn-y" : p.id === "free" ? "btn-line" : "btn-k"}`}>{p.cta}</Link>
+                  <Link href={p.id === "free" ? "/app" : `/app?buy=${p.id}`} className={`btn ${popular ? "btn-y" : p.id === "free" ? "btn-line" : "btn-k"}`}>{p.cta}</Link>
                 </div>
               </Reveal>
             );

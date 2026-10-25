@@ -203,3 +203,109 @@ function isDark(hex: string) {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
   return 0.299 * r + 0.587 * g + 0.114 * b < 140;
 }
+
+export type BackdropPreset = { id: string; label: string; draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void };
+
+export const BACKDROP_PRESETS: BackdropPreset[] = [
+  {
+    id: "studio-white",
+    label: "Clean Studio",
+    draw: (ctx, w, h) => {
+      const grad = ctx.createRadialGradient(w / 2, h * 0.4, w * 0.1, w / 2, h / 2, w * 0.8);
+      grad.addColorStop(0, "#ffffff");
+      grad.addColorStop(1, "#e6e6e8");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    },
+  },
+  {
+    id: "studio-dark",
+    label: "Dark Stage",
+    draw: (ctx, w, h) => {
+      const grad = ctx.createRadialGradient(w / 2, h * 0.45, w * 0.05, w / 2, h / 2, w * 0.75);
+      grad.addColorStop(0, "#2a2a2e");
+      grad.addColorStop(1, "#0a0a0d");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    },
+  },
+  {
+    id: "warm-desk",
+    label: "Warm Wood",
+    draw: (ctx, w, h) => {
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#f2ebe3");
+      grad.addColorStop(0.65, "#dfd3c3");
+      grad.addColorStop(0.66, "#7c5c43");
+      grad.addColorStop(1, "#4a3322");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    },
+  },
+  {
+    id: "sunset-glow",
+    label: "Sunset Glow",
+    draw: (ctx, w, h) => {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#ff7e5f");
+      grad.addColorStop(0.5, "#feb47b");
+      grad.addColorStop(1, "#ffd60a");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    },
+  },
+  {
+    id: "cyber-yellow",
+    label: "CutOut Yellow",
+    draw: (ctx, w, h) => {
+      const grad = ctx.createRadialGradient(w / 2, h * 0.5, w * 0.1, w / 2, h / 2, w * 0.7);
+      grad.addColorStop(0, "#ffe033");
+      grad.addColorStop(1, "#ffd60a");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    },
+  },
+];
+
+/** Composites the cutout onto a custom background image or backdrop preset. */
+export async function compositeBackground(
+  cutout: HTMLImageElement,
+  bgSource: HTMLImageElement | BackdropPreset,
+  shadow = true
+) {
+  let W = 1920, H = 1080;
+  if ("naturalWidth" in bgSource && bgSource.naturalWidth > 0) {
+    W = bgSource.naturalWidth;
+    H = bgSource.naturalHeight;
+  } else {
+    W = Math.max(1280, cutout.naturalWidth);
+    H = Math.max(720, cutout.naturalHeight);
+  }
+
+  const [c, ctx] = canvas(W, H);
+
+  if ("draw" in bgSource) {
+    bgSource.draw(ctx, W, H);
+  } else {
+    ctx.drawImage(bgSource, 0, 0, W, H);
+  }
+
+  const b = bounds(cutout);
+  const bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+  const scale = Math.min((W * 0.82) / Math.max(1, bw), (H * 0.85) / Math.max(1, bh));
+  const dw = bw * scale, dh = bh * scale;
+  const dx = (W - dw) / 2;
+  const dy = H - dh; // Anchor to the bottom
+
+  ctx.save();
+  if (shadow) {
+    ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+    ctx.shadowBlur = Math.round(W * 0.02);
+    ctx.shadowOffsetY = Math.round(H * 0.012);
+  }
+  ctx.drawImage(cutout, b.x0, b.y0, bw, bh, dx, dy, dw, dh);
+  ctx.restore();
+
+  return { png: await toBlob(c, "image/jpeg", 0.94), url: c.toDataURL("image/jpeg", 0.94) };
+}
+

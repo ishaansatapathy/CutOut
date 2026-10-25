@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ID_PRESETS, idPhoto, printSheet, profile, sticker, thumbnail, type IdPreset } from "./compose";
+import { BACKDROP_PRESETS, compositeBackground, ID_PRESETS, idPhoto, printSheet, profile, sticker, thumbnail, type BackdropPreset, type IdPreset } from "./compose";
 import { type Box, download, Dropzone, errorText, loadImage, ModeSwitch, type Mode, type Pt, SelectStage } from "./SelectStage";
 import { useRefund, useUnlock } from "./unlock";
 
@@ -12,9 +12,10 @@ const BGS = [
   { id: "yellow", c: "#ffd60a", label: "Yellow" },
   { id: "black", c: "#0b0b0b", label: "Black" },
 ];
-type Make = "png" | "sticker" | "profile" | "id" | "thumb";
+type Make = "png" | "backdrop" | "sticker" | "profile" | "id" | "thumb";
 const MAKES: { id: Make; label: string; hint: string }[] = [
   { id: "png", label: "Cutout PNG", hint: "Transparent or on a colour" },
+  { id: "backdrop", label: "Replace Background", hint: "Studio backdrops or custom photo" },
   { id: "sticker", label: "Sticker", hint: "WhatsApp & Instagram, 512×512" },
   { id: "profile", label: "Profile picture", hint: "Head & shoulders, circle or square" },
   { id: "id", label: "ID / passport photo", hint: "Sized to common specs, print sheet" },
@@ -136,6 +137,8 @@ function MakePanel({ sid, cutUrl, make, setMake, bg, setBg }: {
 }) {
   const [preview, setPreview] = useState<{ url: string; blob: Blob; name: string; alt?: { blob: Blob; name: string; label: string } } | null>(null);
   const [preset, setPreset] = useState<IdPreset>(ID_PRESETS[0]);
+  const [backdropPreset, setBackdropPreset] = useState<BackdropPreset>(BACKDROP_PRESETS[0]);
+  const [customBg, setCustomBg] = useState<HTMLImageElement | null>(null);
   const [shape, setShape] = useState<"circle" | "square">("circle");
   const [pColor, setPColor] = useState("#ffd60a");
   const [idBg, setIdBg] = useState("#ffffff");
@@ -157,7 +160,11 @@ function MakePanel({ sid, cutUrl, make, setMake, bg, setBg }: {
       setBusy(true);
       const img = await fullCut();
       if (cancel) return;
-      if (make === "sticker") {
+      if (make === "backdrop") {
+        const bgSource = customBg || backdropPreset;
+        const b = await compositeBackground(img, bgSource);
+        setPreview({ url: b.url, blob: b.png, name: "cutout-backdrop.jpg" });
+      } else if (make === "sticker") {
         const s = await sticker(img);
         setPreview({ url: s.url, blob: s.webp, name: "sticker.webp", alt: { blob: s.png, name: "sticker.png", label: "PNG" } });
       } else if (make === "profile") {
@@ -175,7 +182,7 @@ function MakePanel({ sid, cutUrl, make, setMake, bg, setBg }: {
     })();
     return () => { cancel = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [make, shape, pColor, preset, idBg, thumbText, thumbBg, cutUrl]);
+  }, [make, shape, pColor, preset, idBg, thumbText, thumbBg, backdropPreset, customBg, cutUrl]);
 
   const downloadPng = async () => {
     const r = await fetch(`/ai/v1/images/session/${sid}/export`, {
@@ -210,6 +217,45 @@ function MakePanel({ sid, cutUrl, make, setMake, bg, setBg }: {
           </div>
           <button className="btn btn-k btn-block" onClick={downloadPng} id="download">Download PNG <span className="arrow">↓</span></button>
           <p className="fine-left">Full resolution. Files are deleted from our servers after 24 hours.</p>
+        </div>
+      )}
+
+      {make === "backdrop" && (
+        <div className="make-opts">
+          <span className="opt-label">Studio Backdrop Presets</span>
+          <div className="seg flex-wrap">
+            {BACKDROP_PRESETS.map((bp) => (
+              <button
+                key={bp.id}
+                type="button"
+                className={backdropPreset.id === bp.id && !customBg ? "on" : ""}
+                onClick={() => { setCustomBg(null); setBackdropPreset(bp); }}
+              >
+                {bp.label}
+              </button>
+            ))}
+          </div>
+          <span className="opt-label">Or Custom Background Photo</span>
+          <label className="btn btn-line btn-block text-center cursor-pointer">
+            {customBg ? "Change custom photo" : "Upload background photo"}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  const img = await loadImage(URL.createObjectURL(f));
+                  setCustomBg(img);
+                }
+              }}
+            />
+          </label>
+          {customBg && (
+            <button type="button" className="btn btn-line btn-sm" onClick={() => setCustomBg(null)}>
+              Reset to preset backdrop
+            </button>
+          )}
         </div>
       )}
 

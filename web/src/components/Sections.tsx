@@ -180,3 +180,184 @@ function StoryVisual({ step }: { step: number }) {
             <img src="/demo/before.webp" alt="" loading="lazy" />
             <i />
           </span>
+        ))}
+      </div>
+      <div className="sv-formats"><span>cutout.png</span><span>clip.webm</span><span>clip.mp4</span></div>
+      <span className="sv-tag" key={step}>{STEPS[step].tag}</span>
+    </div>
+  );
+}
+
+export function HowItWorks() {
+  const [active, setActive] = useState(0);
+  const refs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) setActive(Number((e.target as HTMLElement).dataset.i));
+      },
+      { rootMargin: "-45% 0px -45% 0px" },
+    );
+    refs.current.forEach((el) => el && io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <section className="sec dark panel" id="how">
+      <div className="wrap">
+        <Reveal className="sec-head">
+          <Eyebrow>How it works</Eyebrow>
+          <h2>Point. Click. <em>Done.</em></h2>
+          <p>No brushes, no lasso, no layers. You show CutOut what to keep and it does the tracing.</p>
+        </Reveal>
+        <div className="story">
+          <div className="story-steps">
+            {STEPS.map((s, i) => (
+              <div
+                key={i}
+                data-i={i}
+                ref={(el) => { refs.current[i] = el; }}
+                className={`story-step ${active === i ? "on" : ""}`}
+              >
+                <span className="n">0{i + 1}</span>
+                <h3>{s.t}</h3>
+                <p>{s.d}</p>
+                <ul className="chips">{s.chips.map((c) => <li key={c}>{c}</li>)}</ul>
+                <div className="story-inline"><StoryVisual step={i} /></div>
+              </div>
+            ))}
+          </div>
+          <div className="story-sticky"><StoryVisual step={active} /></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- edges ------------------------------- */
+const BACKDROPS = [
+  { id: "checker", label: "Transparent" },
+  { id: "white", label: "White" },
+  { id: "yellow", label: "Yellow" },
+  { id: "black", label: "Black" },
+];
+
+export function Edges() {
+  const [bg, setBg] = useState("checker");
+  const [custom, setCustom] = useState("#ff4d6d");
+  const [idle, setIdle] = useState(true);
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef(false);
+  const pos = useRef(50);
+
+  const setPos = (v: number) => {
+    pos.current = Math.min(100, Math.max(0, v));
+    ref.current!.style.setProperty("--pos", `${pos.current}%`);
+    ref.current!.setAttribute("aria-valuenow", String(Math.round(pos.current)));
+  };
+  const move = (x: number) => {
+    const r = ref.current!.getBoundingClientRect();
+    setPos(((x - r.left) / r.width) * 100);
+  };
+
+  return (
+    <section className="sec" id="edges">
+      <div className="wrap edges">
+        <Reveal className="edges-copy">
+          <Eyebrow>Clean edges</Eyebrow>
+          <h2>Hair and fur <em>stay soft.</em></h2>
+          <p className="sub">
+            After the subject is selected, a matting pass refines the edge so curls and stray strands don&apos;t look
+            pasted on. Move across the photo to compare.
+          </p>
+          <ul className="ticks">
+            <li>Returned at your original resolution</li>
+            <li>Correction clicks to add or remove areas</li>
+            <li>Transparent PNG, or flattened onto a colour</li>
+          </ul>
+          <div className="swatches" role="radiogroup" aria-label="Backdrop">
+            {BACKDROPS.map((b) => (
+              <button
+                key={b.id}
+                id={`edge-bg-${b.id}`}
+                role="radio"
+                aria-checked={bg === b.id}
+                className={bg === b.id ? "on" : ""}
+                onClick={() => setBg(b.id)}
+              >
+                <i className={`sw-${b.id}`} />{b.label}
+              </button>
+            ))}
+            <label className={`sw-pick ${bg === "custom" ? "on" : ""}`} role="radio" aria-checked={bg === "custom"}>
+              <i style={{ background: custom }} />Any colour
+              <input
+                type="color"
+                value={custom}
+                aria-label="Pick a backdrop colour"
+                onChange={(e) => { setCustom(e.target.value); setBg("custom"); }}
+                onClick={() => setBg("custom")}
+              />
+            </label>
+          </div>
+        </Reveal>
+        <Reveal delay={120}>
+          <div
+            ref={ref}
+            className={`cmp ${idle ? "idle" : ""}`}
+            id="compare"
+            role="slider"
+            tabIndex={0}
+            aria-label="Compare original and cutout"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={50}
+            onPointerDown={(e) => {
+              drag.current = true;
+              setIdle(false);
+              e.currentTarget.setPointerCapture(e.pointerId);
+              move(e.clientX);
+            }}
+            onPointerMove={(e) => {
+              if (drag.current || e.pointerType === "mouse") { setIdle(false); move(e.clientX); }
+            }}
+            onPointerUp={() => (drag.current = false)}
+            onKeyDown={(e) => {
+              const step = e.shiftKey ? 10 : 3;
+              if (e.key === "ArrowLeft") { setIdle(false); setPos(pos.current - step); e.preventDefault(); }
+              if (e.key === "ArrowRight") { setIdle(false); setPos(pos.current + step); e.preventDefault(); }
+            }}
+          >
+            <img className="layer" src="/demo/before.webp" alt="Original photo in a busy market" loading="lazy" width={1200} height={896} />
+            <div className={`layer cmp-after bg-${bg}`} style={bg === "custom" ? { background: custom } : undefined}>
+              <img className="layer" src="/demo/cutout.webp" alt="The same person with the background removed" loading="lazy" width={1200} height={896} />
+            </div>
+            <span className="cmp-handle" />
+            <span className="cmp-tag l">Original</span>
+            <span className="cmp-tag r">CutOut</span>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- video ------------------------------- */
+const TOTAL_FRAMES = 360;
+
+export function Video() {
+  const frames = Array.from({ length: 12 });
+  const stack = useRef<HTMLDivElement>(null);
+  const counter = useRef<HTMLSpanElement>(null);
+
+  const scrub = (e: React.PointerEvent) => {
+    const r = stack.current!.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    stack.current!.classList.add("scrub");
+    stack.current!.style.setProperty("--ph", `${f * 100}%`);
+    const frame = Math.round(f * (TOTAL_FRAMES - 1)) + 1;
+    const sec = (f * 12).toFixed(1).padStart(4, "0");
+    counter.current!.textContent = `Frame ${frame} / ${TOTAL_FRAMES} · 00:${sec}`;
+  };
+  const release = () => {
+    stack.current!.classList.remove("scrub");

@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { api } from "@/trpc/client";
 import { Modal } from "./Modal";
 
@@ -30,8 +30,14 @@ function loadRazorpay() {
 export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [signIn, setSignIn] = useState<string | null>(null);
   const [buy, setBuy] = useState<string | null>(null);
+
+  const openSignIn = useCallback((r?: string) => setSignIn(r ?? ""), []);
+  const openBuy = useCallback((r?: string) => setBuy(r ?? ""), []);
+
+  const uiValue = useMemo(() => ({ signIn: openSignIn, buy: openBuy }), [openSignIn, openBuy]);
+
   return (
-    <UiCtx.Provider value={{ signIn: (r) => setSignIn(r ?? ""), buy: (r) => setBuy(r ?? "") }}>
+    <UiCtx.Provider value={uiValue}>
       {children}
       <SignInModal reason={signIn} onClose={() => setSignIn(null)} />
       <BuyModal reason={buy} onClose={() => setBuy(null)} />
@@ -83,15 +89,29 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
   const verify = api.credits.verify.useMutation();
   const devComplete = api.credits.devComplete.useMutation();
   const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [pendingPack, setPendingPack] = useState<string | null>(null);
+  const [devEmail, setDevEmail] = useState("");
+
+  const devLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    const r = await fetch("/api/auth/dev", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: devEmail }) });
+    if (!r.ok) return setErr(((await r.json()) as { error?: string }).error ?? "Sign-in failed");
+    await utils.invalidate();
+  };
 
   const buy = async (pack: string) => {
     setMsg(null);
+    setErr(null);
+    setPendingPack(pack);
     try {
       const o = await create.mutateAsync({ pack });
       if (!o.keyId) {
         await devComplete.mutateAsync({ orderId: o.orderId });
         await utils.me.invalidate();
         setMsg(`Test purchase done: +${o.pack.credits} credits.`);
+        setTimeout(() => onClose(), 1500);
         return;
       }
       await loadRazorpay();
@@ -105,18 +125,30 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
         prefill: { email: me.data?.user?.email ?? "" },
         theme: { color: "#FFD60A" },
         method: { upi: true, card: true, netbanking: true, wallet: true },
+        modal: {
+          ondismiss: () => {
+            setPendingPack(null);
+          },
+        },
         handler: async (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-          await verify.mutateAsync({
-            orderId: r.razorpay_order_id,
-            paymentId: r.razorpay_payment_id,
-            signature: r.razorpay_signature,
-          });
-          await utils.me.invalidate();
-          setMsg(`Payment received: +${o.pack.credits} credits.`);
+          try {
+            await verify.mutateAsync({
+              orderId: r.razorpay_order_id,
+              paymentId: r.razorpay_payment_id,
+              signature: r.razorpay_signature,
+            });
+            await utils.me.invalidate();
+            setMsg(`Payment received! +${o.pack.credits} credits added to your account.`);
+            setTimeout(() => onClose(), 2000);
+          } catch (verErr) {
+            setErr((verErr as Error).message || "Payment verification failed.");
+          }
         },
       }).open();
     } catch (e) {
-      setMsg((e as Error).message);
+      setErr((e as Error).message);
+    } finally {
+      setPendingPack(null);
     }
   };
 
@@ -126,11 +158,11 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
     <Modal open={reason !== null} onClose={onClose} title="Buy credits" wide>
       {reason && !requestedPack && <p className="modal-note">{reason}</p>}
       {!me.data?.user ? (
-        <div style={{ textAlign: "center", padding: "16px 0" }}>
-          <p className="modal-note" style={{ marginBottom: 16 }}>
+        <div style={{ textAlign: "center", padding: "8px 0", display: "flex", flexDirection: "column", gap: 14 }}>
+          <p className="modal-note">
             {requestedPack
-              ? `Sign in with Google to purchase the ${requestedPack.name} pack (₹${requestedPack.price}).`
-              : "Sign in with Google so your credits are securely saved to your account."}
+              ? `Sign in to purchase the ${requestedPack.name} pack (₹${requestedPack.price}).`
+              : "Sign in so your credits are securely saved to your account."}
           </p>
           <a
             className="btn btn-k btn-block"
@@ -144,25 +176,46 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
               <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
               <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.2-.1-2.4-.4-3.5z"/>
             </svg>
-            Sign in with Google to continue
+            Continue with Google
           </a>
+          {me.data?.devLogin && (
+            <form className="dev-box" onSubmit={devLogin}>
+              <span className="dev-tag">Quick Local Sign-In</span>
+              <p>Sign in locally to test Razorpay UPI purchase instantly:</p>
+              <div className="inline-form" style={{ marginTop: 8 }}>
+                <input type="email" required placeholder="you@studio.in" value={devEmail} onChange={(e) => setDevEmail(e.target.value)} aria-label="Email" />
+                <button className="btn btn-y btn-sm" id="buy-dev-signin">Sign in</button>
+              </div>
+            </form>
+          )}
         </div>
       ) : (
         <>
           <div className="packs">
-            {packs.data?.map((p) => (
-              <button
-                key={p.id}
-                className={`pack ${p.id === (reason || "creator") ? "hot" : ""}`}
-                onClick={() => buy(p.id)}
-                disabled={create.isPending}
-                id={`buy-${p.id}`}
-              >
-                <b>₹{p.price}</b>
-                <span>{p.credits} credits</span>
-                <small>₹{(p.price / p.credits).toFixed(2)} / credit</small>
-              </button>
-            ))}
+            {packs.data?.map((p) => {
+              const isSelected = p.id === (reason || "creator");
+              const isPending = pendingPack === p.id;
+              return (
+                <button
+                  key={p.id}
+                  className={`pack ${isSelected ? "hot" : ""}`}
+                  onClick={() => buy(p.id)}
+                  disabled={!!pendingPack}
+                  id={`buy-${p.id}`}
+                  style={{ cursor: pendingPack ? "wait" : "pointer" }}
+                >
+                  {isPending ? (
+                    <span style={{ padding: "12px 0", fontWeight: 700 }}>Opening UPI…</span>
+                  ) : (
+                    <>
+                      <b>₹{p.price}</b>
+                      <span>{p.credits} credits</span>
+                      <small>₹{(p.price / p.credits).toFixed(2)} / credit</small>
+                    </>
+                  )}
+                </button>
+              );
+            })}
           </div>
           <p className="modal-fine">
             1 credit = 1 image or generation · video is 1 credit/sec at 720p, 2 at 1080p · paid jobs have no ads.
@@ -175,7 +228,8 @@ function BuyModal({ reason, onClose }: { reason: string | null; onClose: () => v
           </p>
         </>
       )}
-      {msg && <p className="modal-msg" role="status">{msg}</p>}
+      {msg && <p className="modal-msg" style={{ color: "#065f46" }} role="status">{msg}</p>}
+      {err && <div className="alert" role="alert" style={{ marginTop: 8 }}>{err}</div>}
     </Modal>
   );
 }

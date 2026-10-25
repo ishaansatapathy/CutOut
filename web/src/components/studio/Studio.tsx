@@ -46,8 +46,12 @@ function StudioInner() {
     const buyParam = params.get("buy");
     if (buyParam) {
       ui.buy(buyParam);
+      const next = new URLSearchParams(params.toString());
+      next.delete("buy");
+      const qs = next.toString();
+      router.replace(qs ? `/app?${qs}` : "/app", { scroll: false });
     }
-  }, [params, ui]);
+  }, [params, router, ui]);
 
   const choose = (id: ToolId) => {
     setTool(id);

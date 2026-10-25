@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { PLANS } from "@/lib/plans";
 import { api } from "@/trpc/client";
 import { Logo } from "./Logo";
+import { useAccountUi } from "./studio/account";
 import { Eyebrow, Reveal, spot } from "./ui";
 
 const cssVar = (k: string, v: string | number) => ({ [k]: v }) as React.CSSProperties;
@@ -607,6 +608,7 @@ export function ForWho() {
 
 /* ------------------------------ pricing ------------------------------ */
 export function Pricing() {
+  const ui = useAccountUi();
   return (
     <section className="sec" id="pricing">
       <div className="wrap">
@@ -626,7 +628,19 @@ export function Pricing() {
                   <p className="tagline">{p.tagline}</p>
                   <div className="price">₹{p.price}<small>{p.credits ? ` / ${p.credits} credits` : " / always"}</small></div>
                   <ul>{p.features.map((f) => <li key={f}>{f}</li>)}</ul>
-                  <Link href={p.id === "free" ? "/app" : `/app?buy=${p.id}`} className={`btn ${popular ? "btn-y" : p.id === "free" ? "btn-line" : "btn-k"}`}>{p.cta}</Link>
+                  {p.id === "free" ? (
+                    <Link href="/app" className="btn btn-line" id={`plan-cta-${p.id}`}>{p.cta}</Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => ui.buy(p.id)}
+                      className={`btn ${popular ? "btn-y" : "btn-k"}`}
+                      id={`plan-cta-${p.id}`}
+                      style={{ cursor: "pointer", width: "100%", textAlign: "center" }}
+                    >
+                      {p.cta}
+                    </button>
+                  )}
                 </div>
               </Reveal>
             );

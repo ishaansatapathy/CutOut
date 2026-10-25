@@ -1,4 +1,4 @@
-﻿/* CutOut :) - yellow, black and white only */
+/* CutOut :) - yellow, black and white only */
 @property --pos { syntax: "<percentage>"; inherits: true; initial-value: 50%; }
 @property --ph { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 
@@ -704,6 +704,7 @@ code { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 
 .tico { width: 16px; height: 16px; border-radius: 5px; background: currentColor; -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }
 .tool-tabs .on .tico { background: var(--y); }
 .tico.remove { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3' stroke='black' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='3.5'/%3E%3C/svg%3E"); }
+.tico.batch { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='7' y='2' width='14' height='14' rx='2' fill='none' stroke='black' stroke-width='2.2'/%3E%3Cpath d='M3 7v12a2 2 0 0 0 2 2h12' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"); }
 .tico.erase { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15 3l6 6-10 10H5l-2-2z' /%3E%3Cpath d='M11 21h10' stroke='black' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
 .tico.video { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='5' width='14' height='14' rx='3'/%3E%3Cpath d='M17 10l5-3v10l-5-3z'/%3E%3C/svg%3E"); }
 .tico.upscale { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 3h7v7M21 3l-8 8M10 21H3v-7M3 21l8-8' stroke='black' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }

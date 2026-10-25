@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/trpc/client";
 import { AccountBar, useAccountUi } from "./account";
+import { BatchTool } from "./BatchTool";
 import { EraseTool } from "./EraseTool";
 import { GenerateTool } from "./GenerateTool";
 import { RemoveTool } from "./RemoveTool";
@@ -13,6 +14,7 @@ import { VideoTool } from "./VideoTool";
 
 export const TOOLS = [
   { id: "remove", label: "Remove background", short: "Background", h: "Click what you want to", em: "keep." },
+  { id: "batch", label: "Batch removal", short: "Batch", h: "Drop multiple photos.", em: "Cut out all." },
   { id: "erase", label: "Erase object", short: "Erase", h: "Click what you want", em: "gone." },
   { id: "video", label: "Video background", short: "Video", h: "Select once,", em: "tracked everywhere." },
   { id: "upscale", label: "Upscale 2×", short: "Upscale", h: "Small photo?", em: "Make it sharp." },
@@ -75,6 +77,7 @@ function StudioInner() {
 
       <section className="tool-card">
         {tool === "remove" && <RemoveTool initialFile={handoff} onConsumed={() => setHandoff(null)} />}
+        {tool === "batch" && <BatchTool />}
         {tool === "erase" && <EraseTool />}
         {tool === "video" && <VideoTool />}
         {tool === "upscale" && <UpscaleTool />}

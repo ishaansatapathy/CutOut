@@ -110,3 +110,114 @@ function UnlockModal({ req, onDone }: { req: Req; onDone: (g: Grant | null) => v
         <div className="blocked" role="alert">
           <p>{blocked.message}</p>
           {blocked.reason === "login" && <button className="btn btn-k btn-sm" onClick={() => ui.signIn(blocked.message)}>Sign in with Google</button>}
+          {(blocked.reason === "credits" || blocked.reason === "limit") && user && <button className="btn btn-y btn-sm" onClick={() => ui.buy(blocked.message)}>Buy credits</button>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+type Googletag = {
+  cmd: { push: (f: () => void) => void };
+  enums: { OutOfPageFormat: { REWARDED: unknown } };
+  defineOutOfPageSlot: (unit: string, fmt: unknown) => { addService: (s: unknown) => unknown } | null;
+  pubads: () => { addEventListener: (ev: string, cb: (e: { makeRewardedVisible?: () => void }) => void) => void };
+  enableServices: () => void;
+  display: (slot: unknown) => void;
+  destroySlots: (slots: unknown[]) => void;
+};
+
+function showGptRewarded(unit: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const w = window as unknown as { googletag?: Googletag };
+    const start = () => {
+      const g = w.googletag!;
+      g.cmd.push(() => {
+        const slot = g.defineOutOfPageSlot(unit, g.enums.OutOfPageFormat.REWARDED);
+        if (!slot) return resolve(false);
+        slot.addService(g.pubads());
+        let granted = false;
+        g.pubads().addEventListener("rewardedSlotReady", (e) => e.makeRewardedVisible?.());
+        g.pubads().addEventListener("rewardedSlotGranted", () => { granted = true; });
+        g.pubads().addEventListener("rewardedSlotClosed", () => { g.destroySlots([slot]); resolve(granted); });
+        g.enableServices();
+        g.display(slot);
+      });
+    };
+    if (w.googletag) return start();
+    const s = document.createElement("script");
+    s.src = "https://securepubads.g.doubleclick.net/tag/js/gpt.js";
+    s.async = true;
+    s.onload = start;
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+function AdPlayer({ session, onGrant, onError }: {
+  session: { adSession: string; required: number }; onGrant: (g: Grant) => void; onError: (m: string) => void;
+}) {
+  const next = api.ads.next.useMutation();
+  const reward = api.ads.reward.useMutation();
+  const provider = process.env.NEXT_PUBLIC_AD_PROVIDER ?? "test";
+  const unit = process.env.NEXT_PUBLIC_GPT_REWARDED_UNIT ?? "";
+  const [ad, setAd] = useState<{ adId: string; index: number; required: number; minMs: number } | null>(null);
+  const [left, setLeft] = useState(0);
+  const cbs = useRef({ next, reward, onGrant, onError });
+  useEffect(() => {
+    cbs.current = { next, reward, onGrant, onError };
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    (async () => {
+      const c = () => cbs.current;
+      try {
+        while (!cancelled) {
+          const a = await c().next.mutateAsync({ adSession: session.adSession });
+          if (cancelled) return;
+          setAd(a);
+          if (provider === "gpt" && unit) {
+            const t0 = Date.now();
+            if (!(await showGptRewarded(unit))) return c().onError("The ad didn't finish, so nothing was unlocked. Try again.");
+            await wait(Math.max(0, a.minMs - (Date.now() - t0)));
+          } else {
+            for (let s = Math.ceil(a.minMs / 1000); s > 0 && !cancelled; s--) {
+              setLeft(s);
+              await wait(1000);
+            }
+            setLeft(0);
+          }
+          if (cancelled) return;
+          const r = await c().reward.mutateAsync({ adSession: session.adSession, adId: a.adId });
+          if (r.kind === "error") return c().onError(r.message);
+          if (r.kind === "token") return c().onGrant({ token: r.token, jti: r.jti, limits: r.limits, charged: 0 });
+        }
+      } catch (e) {
+        if (!cancelled) c().onError((e as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session.adSession, provider, unit]);
+
+  const idx = ad?.index ?? 1;
+  return (
+    <div className="adplayer">
+      <div className="ad-dots">
+        {Array.from({ length: session.required }).map((_, i) => <i key={i} className={i < idx - 1 ? "done" : i === idx - 1 ? "on" : ""} />)}
+      </div>
+      {provider === "gpt" && unit ? (
+        <p className="ad-wait">Ad {idx} of {session.required} is playing…</p>
+      ) : (
+        <div className="ad-test" aria-live="polite">
+          <span className="dev-tag">Test ad</span>
+          <b>Ad {idx} of {session.required}</b>
+          <p>A real rewarded ad plays here once an ad network is connected.</p>
+          <div className="ad-count">{left > 0 ? `${left}s` : "…"}</div>
+        </div>
+      )}
+      <p className="modal-fine">Ads keep the free tier free. Credits skip them entirely.</p>
+    </div>
+  );
+}
